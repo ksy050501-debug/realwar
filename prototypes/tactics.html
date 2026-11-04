@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>전장의 지휘관</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#151821;--panel:#232a39;--line:#364057;--txt:#e8ecf4;--mut:#9aa4b8;--blue:#3d8bff;--red:#ff5252;--gold:#ffc940;--ts:48px}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(circle at 30% 0,#2a3246,#12151d 70%);color:var(--txt);font-family:'Noto Sans KR',system-ui,sans-serif;min-height:100vh}
+header{display:flex;align-items:center;gap:10px;padding:12px 16px 8px}
+h1{font-size:21px;margin:0;font-weight:900;letter-spacing:-.5px}
+h1 small{font-size:12px;color:var(--mut);font-weight:400;margin-left:6px}
+.sp{flex:1}
+button{font-family:inherit;cursor:pointer;border:none;border-radius:8px;padding:8px 14px;font-weight:700;font-size:14px;background:#3a4560;color:var(--txt)}
+button:hover{filter:brightness(1.15)}
+button:disabled{opacity:.4;cursor:not-allowed;filter:none}
+button.pri{background:var(--blue)}
+button.warn{background:#c98a14}
+.wrap{display:flex;gap:14px;padding:0 14px 14px;align-items:flex-start}
+#boardWrap{flex:1;min-width:0;max-width:980px}
+#board{position:relative;width:100%;aspect-ratio:14/10;border-radius:10px;overflow:hidden;box-shadow:0 10px 30px #0009;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+#tiles{position:absolute;inset:0;display:grid;grid-template-columns:repeat(14,1fr);grid-template-rows:repeat(10,1fr)}
+.tile{position:relative;border:1px solid #00000022;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.tile .deco{font-size:calc(var(--ts)*.5);pointer-events:none;line-height:1}
+.plain{background:#7db458}.plain.alt{background:#77ad52}
+.forest{background:#3d7a3a}
+.mount{background:#8b8676}
+.water{background:#3b7ec2;background-image:repeating-linear-gradient(135deg,#ffffff14 0 6px,transparent 6px 14px)}
+.village{background:#a3c46d}
+.castle{background:#b0a689}
+.own0{box-shadow:inset 0 0 0 3px var(--blue)}
+.own1{box-shadow:inset 0 0 0 3px var(--red)}
+.flag{position:absolute;top:2px;left:3px;font-size:calc(var(--ts)*.2);font-weight:900;pointer-events:none}
+.tile::after{content:'';position:absolute;inset:0;pointer-events:none}
+.tile.reach::after{background:#5aaeff66;outline:1px solid #b9dcff99;outline-offset:-1px}
+.tile.danger::after{background:#ff505033}
+.tile.tgt::after{background:#ff3b3b77;outline:2px solid #ffd2d2;outline-offset:-2px;animation:pulse .8s infinite alternate}
+.tile.hov{filter:brightness(1.18)}
+@keyframes pulse{to{opacity:.45}}
+#unitsLayer,#fx{position:absolute;inset:0;pointer-events:none}
+.unit{position:absolute;width:calc(100%/14);height:10%;display:flex;align-items:center;justify-content:center;transition:left .085s linear,top .085s linear}
+.unit .body{width:76%;height:76%;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:calc(var(--ts)*.4);border:3px solid;box-shadow:0 3px 6px #0007;line-height:1}
+.t0 .body{background:radial-gradient(circle at 35% 30%,#86baff,#1f5fd0);border-color:#d6e8ff}
+.t1 .body{background:radial-gradient(circle at 35% 30%,#ff9393,#bd2428);border-color:#ffd5d5}
+.unit.done .body{filter:grayscale(.75) brightness(.7)}
+.unit.sel .body{animation:bob .45s infinite alternate;border-color:#fff59a}
+@keyframes bob{to{transform:translateY(-12%)}}
+.unit.shake{animation:shake .3s}
+@keyframes shake{25%{transform:translateX(-8%)}75%{transform:translateX(8%)}}
+.hp{position:absolute;bottom:5%;left:14%;width:72%;height:11%;background:#000b;border-radius:3px;overflow:hidden}
+.hp i{display:block;height:100%;background:#58e05b;transition:width .25s}
+.hpn{position:absolute;right:3%;top:1%;font-size:calc(var(--ts)*.22);font-weight:900;text-shadow:0 0 3px #000,0 0 3px #000,0 0 3px #000}
+.float{position:absolute;font-weight:900;font-size:calc(var(--ts)*.42);text-shadow:0 0 4px #000,0 0 4px #000;animation:floatup 1s forwards;transform:translateX(-50%);white-space:nowrap}
+@keyframes floatup{from{opacity:1;margin-top:0}to{opacity:0;margin-top:calc(var(--ts)*-.9)}}
+#banner{position:absolute;left:0;right:0;top:40%;text-align:center;font-size:calc(var(--ts)*.7);font-weight:900;padding:10px;background:linear-gradient(90deg,transparent,#000b,transparent);opacity:0;pointer-events:none;transition:opacity .3s}
+#banner.on{opacity:1}
+#actbar{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}
+#status{flex:1;font-size:14px;color:var(--mut);min-width:180px}
+#endBtn.ready{animation:glow 1s infinite alternate}
+@keyframes glow{to{box-shadow:0 0 14px 3px #5aaeff}}
+#side{width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:10px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.card h3{margin:0 0 8px;font-size:13px;color:var(--mut);font-weight:700}
+.row{display:flex;justify-content:space-between;font-size:14px;padding:2px 0}
+.gold{color:var(--gold);font-weight:900}
+.b{color:#8ec0ff;font-weight:700}.r{color:#ff9a9a;font-weight:700}
+#info{font-size:14px;line-height:1.6;min-height:96px}
+#info .big{font-size:17px;font-weight:900}
+.stat{display:inline-block;background:#ffffff12;border-radius:5px;padding:0 6px;margin:2px 3px 2px 0;font-size:12.5px}
+#log{font-size:12.5px;line-height:1.55;max-height:170px;overflow:auto;color:#c9d0de}
+#log div{border-bottom:1px solid #ffffff0d;padding:2px 0}
+.modal{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:10;padding:16px}
+.modal.on{display:flex}
+.mbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;max-width:560px;width:100%;max-height:90vh;overflow:auto}
+.mbox h2{margin:0 0 12px;font-size:20px}
+.mbox p,.mbox li{font-size:14px;line-height:1.65;color:#d3d9e6}
+.ulist{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.ubtn{text-align:left;background:#2f3850;border:1px solid var(--line);padding:10px;border-radius:10px;font-weight:400}
+.ubtn .nm{font-size:16px;font-weight:900}
+.ubtn .ds{font-size:12px;color:var(--mut);margin-top:4px;line-height:1.45}
+.tbl{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}
+.tbl td,.tbl th{border-bottom:1px solid #ffffff14;padding:4px;text-align:center}
+@media (max-width:880px){.wrap{flex-direction:column}#side{width:100%}#boardWrap{width:100%}}
+</style>
+</head>
+<body>
+<header>
+  <h1>⚔️ 전장의 지휘관 <small>턴제 전략 시뮬레이션</small></h1>
+  <div class="sp"></div>
+  <button onclick="openModal('help')">도움말</button>
+  <button onclick="confirmNew()">새 게임</button>
+</header>
+<div class="wrap">
+  <div id="boardWrap">
+    <div id="board">
+      <div id="tiles"></div>
+      <div id="unitsLayer"></div>
+      <div id="fx"></div>
+      <div id="banner"></div>
+    </div>
+    <div id="actbar">
+      <div id="status">유닛을 선택하세요.</div>
+      <button id="waitBtn" style="display:none" onclick="doWait()">대기</button>
+      <button id="cancelBtn" style="display:none" onclick="doCancel()">취소</button>
+      <button id="endBtn" class="pri" onclick="endTurn()">턴 종료 ▶</button>
+    </div>
+  </div>
+  <div id="side">
+    <div class="card">
+      <h3 id="turnTitle">1턴</h3>
+      <div class="row"><span class="b">🔵 청군 (나)</span><span><span class="gold" id="g0">0</span> 골드</span></div>
+      <div class="row"><span style="color:var(--mut)">　수입 / 유닛 / 마을</span><span id="s0"></span></div>
+      <div class="row"><span class="r">🔴 적군 (AI)</span><span><span class="gold" id="g1">0</span> 골드</span></div>
+      <div class="row"><span style="color:var(--mut)">　수입 / 유닛 / 마을</span><span id="s1"></span></div>
+    </div>
+    <div class="card"><h3>정보</h3><div id="info">칸 위에 마우스를 올리면 정보가 나와요.</div></div>
+    <div class="card"><h3>전투 기록</h3><div id="log"></div></div>
+  </div>
+</div>
+
+<div class="modal" id="m-help"><div class="mbox">
+  <h2>⚔️ 전장의 지휘관 — 규칙</h2>
+  <p><b>목표:</b> 보병으로 <b>적의 성🏰을 점령</b>하거나, 적 유닛을 모두 없애면 승리!</p>
+  <ul>
+    <li>내 유닛을 누르면 <span style="color:#8ec0ff">파란 칸</span>으로 이동할 수 있어요. 이동 후 사거리 안의 적(<span style="color:#ff9a9a">빨간 칸</span>)을 눌러 공격합니다.</li>
+    <li>공격받은 적이 살아남고 사거리가 닿으면 <b>반격</b>해요. 체력이 줄면 공격력도 약해집니다.</li>
+    <li><b>보병</b>만 마을🏘️과 성을 점령할 수 있어요. 마을 하나당 매 턴 +50 골드.</li>
+    <li>내 성이 비어 있을 때 성을 누르면 <b>유닛을 모집</b>할 수 있어요.</li>
+    <li>숲·산·마을·성은 방어력을 높여 주고, 내 마을·성에서는 체력이 회복돼요.</li>
+  </ul>
+  <table class="tbl">
+    <tr><th>유닛</th><th>강한 상대</th><th>특징</th></tr>
+    <tr><td>🗡️ 보병</td><td>기병</td><td>점령 가능, 튼튼함</td></tr>
+    <tr><td>🏹 궁수</td><td>보병</td><td>2칸 거리 공격, 근접 반격 불가</td></tr>
+    <tr><td>🐎 기병</td><td>궁수·투석기</td><td>이동 6칸, 산 통과 불가</td></tr>
+    <tr><td>☄️ 투석기</td><td>보병·궁수</td><td>2~3칸 공격, 이동한 턴엔 공격 불가</td></tr>
+  </table>
+  <p style="color:var(--mut);font-size:13px">단축키: Esc = 선택 취소, E = 턴 종료</p>
+  <div style="text-align:right"><button class="pri" onclick="closeModal('help')">전투 시작!</button></div>
+</div></div>
+
+<div class="modal" id="m-recruit"><div class="mbox">
+  <h2>🏰 유닛 모집 <span style="font-size:14px;color:var(--mut)">보유 <span class="gold" id="rg"></span> 골드</span></h2>
+  <div class="ulist" id="ulist"></div>
+  <div style="text-align:right"><button onclick="closeModal('recruit')">닫기</button></div>
+</div></div>
+
+<div class="modal" id="m-over"><div class="mbox" style="text-align:center">
+  <h2 id="overTitle" style="font-size:30px"></h2>
+  <p id="overText"></p>
+  <button class="pri" onclick="closeModal('over');newGame()">다시 하기</button>
+</div></div>
+
+<script>
+const W=14,H=10;
+const TOP=["....f..m..ff..",".v..f.....v...","...ww..f..m...","......v...m.f.",".B..f..ww..v.."];
+const TERR={
+  plain:{name:'평지',def:0,deco:''},
+  forest:{name:'숲',def:1,deco:'🌲'},
+  mount:{name:'산',def:2,deco:'⛰️'},
+  water:{name:'강',def:0,deco:''},
+  village:{name:'마을',def:1,deco:'🏘️'},
+  castle:{name:'성',def:2,deco:'🏰'}
+};
+const UNITS={
+  inf:{name:'보병',icon:'🗡️',hp:10,atk:4,def:2,mov:4,rmin:1,rmax:1,cost:100,cap:true,desc:'마을·성 점령 가능. 기병에 강함.'},
+  arc:{name:'궁수',icon:'🏹',hp:8,atk:4,def:1,mov:3,rmin:2,rmax:2,cost:150,desc:'2칸 거리 공격. 보병에 강함. 바로 옆 적에겐 반격 불가.'},
+  cav:{name:'기병',icon:'🐎',hp:10,atk:5,def:2,mov:6,rmin:1,rmax:1,cost:200,desc:'이동 6칸. 궁수·투석기에 강함. 산 통과 불가, 숲에서 느림.'},
+  cat:{name:'투석기',icon:'☄️',hp:7,atk:7,def:0,mov:3,rmin:2,rmax:3,cost:250,desc:'2~3칸 공격. 이동한 턴에는 공격 불가. 산 통과 불가.'}
+};
+const BONUS={inf:{cav:1.5},cav:{arc:1.5,cat:1.6},arc:{inf:1.3},cat:{inf:1.2,arc:1.2}};
+const TEAMN=['청군','적군'];
+const DIRS=[[1,0],[-1,0],[0,1],[0,-1]];
+
+let map,units,gold,turn,cur,sel,phase,uid,reach,tgt,danger,busy,over,origin,tileEls=[],unitEls=new Map(),hoverK=-1,pendingTouch=-1,lastPointer='mouse';
+
+const key=(x,y)=>y*W+x, ux=k=>k%W, uy=k=>(k/W)|0;
+const inb=(x,y)=>x>=0&&y>=0&&x<W&&y<H;
+const md=(a,b,c,d)=>Math.abs(a-c)+Math.abs(b-d);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const unitAt=(x,y)=>units.find(u=>u.x===x&&u.y===y);
+const tileAt=(x,y)=>map[y][x];
+function mcost(type,t){
+  if(t==='water')return Infinity;
+  if(t==='mount')return (type==='cav'||type==='cat')?Infinity:3;
+  if(t==='forest')return type==='cav'?3:2;
+  return 1;
+}
+function findCastle(team){for(let y=0;y<H;y++)for(let x=0;x<W;x++){const t=map[y][x];if(t.t==='castle'&&t.home===team)return{x,y}}}
+function villagesOf(team){let n=0;for(const r of map)for(const t of r)if(t.t==='village'&&t.owner===team)n++;return n}
+const income=team=>100+50*villagesOf(team);
+
+/* ---------- setup ---------- */
+function newGame(){
+  const rows=TOP.concat(TOP.slice().reverse().map(r=>r.split('').reverse().join('').replace('B','R')));
+  map=[];
+  for(let y=0;y<H;y++){map.push([]);for(let x=0;x<W;x++){
+    const c=rows[y][x];
+    const t={'.':'plain',f:'forest',m:'mount',w:'water',v:'village',B:'castle',R:'castle'}[c];
+    map[y].push({t,owner:c==='B'?0:c==='R'?1:null,home:c==='B'?0:c==='R'?1:null});
+  }}
+  units=[];uid=1;gold=[200,200];turn=0;over=false;sel=null;phase='idle';busy=false;
+  document.getElementById('log').innerHTML='';
+  unitEls.forEach(e=>e.remove());unitEls.clear();
+  const b=findCastle(0);
+  const start=[['inf',1,0],['arc',0,-1],['cav',0,1]];
+  for(const [ty,dx,dy] of start){
+    spawn(ty,0,b.x+dx,b.y+dy);
+    spawn(ty,1,W-1-(b.x+dx),H-1-(b.y+dy));
+  }
+  buildTiles();
+  log('전투가 시작되었습니다! 적의 성을 점령하세요.');
+  startTurn(0);
+}
+function spawn(type,team,x,y){const u={id:uid++,type,team,x,y,hp:UNITS[type].hp,acted:false,moved:false};units.push(u);return u}
+
+function buildTiles(){
+  const box=document.getElementById('tiles');box.innerHTML='';tileEls=[];
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const el=document.createElement('div');
+    el.className='tile';
+    el.addEventListener('pointerdown',e=>{lastPointer=e.pointerType});
+    el.addEventListener('click',()=>onTile(x,y));
+    el.addEventListener('mouseenter',()=>{hoverK=key(x,y);onHover(x,y);renderTiles()});
+    box.appendChild(el);tileEls.push(el);
+  }
+  document.getElementById('board').addEventListener('mouseleave',()=>{hoverK=-1;renderTiles()});
+}
+
+/* ---------- render ---------- */
+function renderTiles(){
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const k=key(x,y),t=map[y][x],el=tileEls[k];
+    let c='tile '+t.t;
+    if(t.t==='plain'&&(x+y)%2)c+=' alt';
+    if(t.owner!=null&&(t.t==='village'||t.t==='castle'))c+=' own'+t.owner;
+    if(reach&&reach.res.has(k))c+=' reach';
+    else if(danger&&danger.has(k))c+=' danger';
+    if(tgt&&tgt.has(k))c+=' tgt';
+    if(k===hoverK)c+=' hov';
+    if(el.className!==c)el.className=c;
+    const deco=TERR[t.t].deco;
+    const flag=(t.t==='village'||t.t==='castle')&&t.owner!=null?`<span class="flag" style="color:${t.owner?'#ff8a8a':'#9cc8ff'}">⚑</span>`:'';
+    const html=(deco?`<span class="deco">${deco}</span>`:'')+flag;
+    if(el._h!==html){el.innerHTML=html;el._h=html}
+  }
+}
+function renderUnits(){
+  const layer=document.getElementById('unitsLayer');
+  const alive=new Set(units.map(u=>u.id));
+  for(const [id,el] of unitEls)if(!alive.has(id)){el.remove();unitEls.delete(id)}
+  for(const u of units){
+    let el=unitEls.get(u.id);
+    if(!el){
+      el=document.createElement('div');
+      el.innerHTML=`<div class="body">${UNITS[u.type].icon}</div><div class="hp"><i></i></div><div class="hpn"></div>`;
+      layer.appendChild(el);unitEls.set(u.id,el);
+    }
+    el.className='unit t'+u.team+(u.acted&&u.team===cur?' done':'')+(sel===u?' sel':'');
+    el.style.left=(u.x*100/W)+'%';el.style.top=(u.y*100/H)+'%';
+    const p=u.hp/UNITS[u.type].hp;
+    const bar=el.querySelector('.hp i');bar.style.width=(p*100)+'%';
+    bar.style.background=p>.6?'#58e05b':p>.3?'#f1c232':'#ff4b4b';
+    el.querySelector('.hpn').textContent=u.hp;
+  }
+}
+function renderPanel(){
+  document.getElementById('turnTitle').textContent=`${turn}턴 · ${TEAMN[cur]}의 차례`;
+  for(const t of [0,1]){
+    document.getElementById('g'+t).textContent=gold[t];
+    document.getElementById('s'+t).textContent=`+${income(t)} / ${units.filter(u=>u.team===t).length} / ${villagesOf(t)}`;
+  }
+  const playerTurn=cur===0&&!over;
+  document.getElementById('endBtn').disabled=!playerTurn||busy;
+  document.getElementById('waitBtn').style.display=phase==='act'?'':'none';
+  document.getElementById('cancelBtn').style.display=(phase==='act'||phase==='move')?'':'none';
+  const allDone=playerTurn&&units.filter(u=>u.team===0).every(u=>u.acted);
+  document.getElementById('endBtn').classList.toggle('ready',allDone&&phase==='idle');
+  let st='';
+  if(!playerTurn)st=over?'게임이 끝났습니다.':'적군이 작전 중입니다…';
+  else if(phase==='idle')st=allDone?'모든 유닛이 행동했어요. 턴을 종료하세요.':'유닛을 선택하세요. (빈 내 성을 누르면 모집)';
+  else if(phase==='move')st=`${UNITS[sel.type].name}: 파란 칸으로 이동하거나 빨간 칸의 적을 공격하세요.`;
+  else if(phase==='act')st='공격할 적을 고르거나 [대기]를 누르세요.';
+  document.getElementById('status').textContent=st;
+}
+function renderAll(){renderTiles();renderUnits();renderPanel()}
+
+function fxText(x,y,text,color){
+  const d=document.createElement('div');d.className='float';d.textContent=text;d.style.color=color;
+  d.style.left=((x+.5)*100/W)+'%';d.style.top=((y+.15)*100/H)+'%';
+  document.getElementById('fx').appendChild(d);setTimeout(()=>d.remove(),1000);
+}
+function shake(u){const el=unitEls.get(u.id);if(!el)return;el.classList.remove('shake');void el.offsetWidth;el.classList.add('shake')}
+async function banner(text,color){
+  const b=document.getElementById('banner');b.textContent=text;b.style.color=color;b.classList.add('on');
+  await sleep(850);b.classList.remove('on');await sleep(250);
+}
+function log(msg){
+  const l=document.getElementById('log');const d=document.createElement('div');d.innerHTML=msg;l.prepend(d);
+  while(l.children.length>40)l.lastChild.remove();
+}
+const uname=u=>`<span class="${u.team?'r':'b'}">${TEAMN[u.team]} ${UNITS[u.type].name}</span>`;
+
+/* ---------- rules ---------- */
+function reachable(u){
+  const T=UNITS[u.type],dist=new Map(),prev=new Map(),k0=key(u.x,u.y);
+  dist.set(k0,0);const pq=[[0,u.x,u.y]];
+  while(pq.length){
+    pq.sort((a,b)=>a[0]-b[0]);const [d,x,y]=pq.shift();
+    if(d>dist.get(key(x,y)))continue;
+    for(const [dx,dy] of DIRS){
+      const nx=x+dx,ny=y+dy;if(!inb(nx,ny))continue;
+      const nd=d+mcost(u.type,map[ny][nx].t);if(nd>T.mov)continue;
+      const o=unitAt(nx,ny);if(o&&o.team!==u.team)continue;
+      const nk=key(nx,ny);
+      if(!dist.has(nk)||nd<dist.get(nk)){dist.set(nk,nd);prev.set(nk,key(x,y));pq.push([nd,nx,ny])}
+    }
+  }
+  const res=new Map();
+  for(const [k,d] of dist){const o=unitAt(ux(k),uy(k));if(!o||o===u)res.set(k,d)}
+  return {res,prev};
+}
+function pathTo(r,from,to){const p=[];let k=to;while(k!==undefined&&k!==from){p.unshift(k);k=r.prev.get(k)}return p}
+function targetsFrom(u,x,y,moved){
+  const T=UNITS[u.type];if(u.type==='cat'&&moved)return [];
+  return units.filter(e=>e.team!==u.team&&(d=>d>=T.rmin&&d<=T.rmax)(md(x,y,e.x,e.y)));
+}
+function calcDmg(att,def,defTile,attHp){
+  const A=UNITS[att.type],D=UNITS[def.type];
+  const b=(BONUS[att.type]||{})[def.type]||1;
+  const hpF=.5+.5*attHp/A.hp;
+  const d=D.def+TERR[defTile.t].def;
+  return Math.max(1,Math.round(A.atk*b*hpF*1.2*(1-.08*d)));
+}
+function forecast(a,ax,ay,d){
+  const dmg=calcDmg(a,d,tileAt(d.x,d.y),a.hp);
+  const left=Math.max(0,d.hp-dmg);let counter=0;
+  if(left>0){const D=UNITS[d.type],dist=md(ax,ay,d.x,d.y);
+    if(dist>=D.rmin&&dist<=D.rmax)counter=calcDmg(d,a,tileAt(ax,ay),left)}
+  return {dmg,left,counter,aLeft:Math.max(0,a.hp-counter)};
+}
+
+/* ---------- player input ---------- */
+function onTile(x,y){
+  if(busy||over||cur!==0)return;
+  const k=key(x,y),u=unitAt(x,y);
+  if(phase==='idle'){
+    if(u&&u.team===0&&!u.acted)select(u);
+    else if(!u&&map[y][x].t==='castle'&&map[y][x].owner===0)openRecruit(x,y);
+    else onHover(x,y);
+  }else if(phase==='move'){
+    if(u&&u.team===1&&tgt.has(k)){tryAttack(u);return}
+    if(reach.res.has(k)){moveSel(x,y);return}
+    if(u&&u.team===0&&!u.acted&&u!==sel){select(u);return}
+    deselect();
+  }else if(phase==='act'){
+    if(u&&u.team===1&&tgt.has(k))tryAttack(u);
+  }
+}
+function tryAttack(e){
+  // 터치 화면: 첫 탭은 예측 보기, 두 번째 탭에 공격
+  const k=key(e.x,e.y);
+  if(lastPointer==='touch'&&pendingTouch!==k){pendingTouch=k;onHover(e.x,e.y,true);return}
+  pendingTouch=-1;attack(sel,e);
+}
+function select(u){
+  sel=u;phase='move';reach=reachable(u);pendingTouch=-1;
+  tgt=new Set(targetsFrom(u,u.x,u.y,false).map(e=>key(e.x,e.y)));
+  danger=new Set();const T=UNITS[u.type];
+  const origins=u.type==='cat'?[key(u.x,u.y)]:[...reach.res.keys()];
+  for(const k of origins){const x=ux(k),y=uy(k);
+    for(let yy=y-T.rmax;yy<=y+T.rmax;yy++)for(let xx=x-T.rmax;xx<=x+T.rmax;xx++){
+      if(!inb(xx,yy))continue;const d=md(x,y,xx,yy);if(d>=T.rmin&&d<=T.rmax)danger.add(key(xx,yy))}}
+  onHover(u.x,u.y);renderAll();
+}
+function clearHL(){reach=null;tgt=null;danger=null}
+function deselect(){sel=null;phase='idle';clearHL();renderAll()}
+async function moveAlong(u,path){for(const k of path){u.x=ux(k);u.y=uy(k);renderUnits();await sleep(85)}}
+async function moveSel(x,y){
+  busy=true;const u=sel;origin={x:u.x,y:u.y};
+  const path=pathTo(reach,key(u.x,u.y),key(x,y));
+  clearHL();renderTiles();
+  await moveAlong(u,path);
+  u.moved=path.length>0;
+  const ts=targetsFrom(u,u.x,u.y,u.moved);
+  busy=false;
+  if(!ts.length){finish(u);return}
+  phase='act';tgt=new Set(ts.map(e=>key(e.x,e.y)));renderAll();
+}
+function doCancel(){
+  if(busy)return;
+  if(phase==='act'&&sel){sel.x=origin.x;sel.y=origin.y;sel.moved=false;select(sel)}
+  else deselect();
+}
+function doWait(){if(!busy&&phase==='act'&&sel)finish(sel)}
+async function attack(a,d){
+  busy=true;clearHL();renderTiles();
+  const f=forecast(a,a.x,a.y,d);
+  shake(d);d.hp-=f.dmg;fxText(d.x,d.y,'-'+f.dmg,'#ffdf5e');renderUnits();
+  let msg=`${uname(a)} → ${uname(d)} ${f.dmg} 피해`;
+  await sleep(320);
+  if(d.hp<=0){units=units.filter(x=>x!==d);msg+=' 💀 격파!';fxText(d.x,d.y,'격파!','#ff8080')}
+  else if(f.counter>0){shake(a);a.hp-=f.counter;fxText(a.x,a.y,'-'+f.counter,'#ffdf5e');msg+=`, 반격 ${f.counter}`;
+    if(a.hp<=0){units=units.filter(x=>x!==a);msg+=' 💀 공격자 전사';fxText(a.x,a.y,'전사','#ff8080')}}
+  log(msg);renderUnits();await sleep(280);busy=false;
+  if(units.includes(a))finish(a);else{if(a===sel){sel=null;phase='idle'}renderAll();checkWin()}
+}
+function finish(u){
+  const t=tileAt(u.x,u.y);
+  if(UNITS[u.type].cap&&(t.t==='village'||t.t==='castle')&&t.owner!==u.team){
+    if(t.t==='castle'){t.owner=u.team;log(`🏰 ${uname(u)}이 적의 성을 점령했습니다!`);endGame(u.team,'성 점령');}
+    else{t.owner=u.team;log(`🏘️ ${uname(u)}이 마을을 점령 (+50/턴)`);fxText(u.x,u.y,'점령!','#ffe27a')}
+  }
+  u.acted=true;if(sel===u)sel=null;phase='idle';clearHL();renderAll();checkWin();
+}
+function checkWin(){
+  if(over)return;
+  for(const t of [0,1]){
+    if(units.filter(u=>u.team===t).length===0&&gold[t]<100){endGame(1-t,'적 전멸');return}
+  }
+}
+function endGame(winner,why){
+  if(over)return;over=true;busy=false;renderAll();
+  setTimeout(()=>{
+    document.getElementById('overTitle').textContent=winner===0?'🏆 승리!':'💀 패배…';
+    document.getElementById('overText').textContent=winner===0?`${turn}턴 만에 ${why}(으)로 승리했습니다. 훌륭한 지휘였어요!`:`적군이 ${why}(으)로 승리했습니다. 전략을 바꿔 다시 도전해 보세요.`;
+    openModal('over');
+  },600);
+}
+
+/* ---------- hover info ---------- */
+function onHover(x,y,touchConfirm){
+  const info=document.getElementById('info'),k=key(x,y),u=unitAt(x,y),t=map[y][x];
+  if(sel&&tgt&&tgt.has(k)&&u){
+    const f=forecast(sel,sel.x,sel.y,u);
+    info.innerHTML=`<div class="big">⚔️ 전투 예측</div>
+      ${uname(sel)} → ${uname(u)}<br>
+      주는 피해 <b class="gold">${f.dmg}</b> (적 HP ${u.hp} → ${f.left}${f.left===0?' 💀':''})<br>
+      받는 반격 <b class="gold">${f.counter}</b> (내 HP ${sel.hp} → ${f.aLeft})
+      ${touchConfirm?'<br><b style="color:#ffd27a">한 번 더 누르면 공격합니다</b>':''}`;
+    return;
+  }
+  const tinfo=`<span class="stat">${TERR[t.t].name} · 방어+${TERR[t.t].def}</span>${t.owner!=null&&(t.t==='village'||t.t==='castle')?`<span class="stat">${TEAMN[t.owner]} 소유</span>`:''}`;
+  if(u){const T=UNITS[u.type];
+    info.innerHTML=`<div class="big">${T.icon} ${uname(u)}</div>
+      <span class="stat">HP ${u.hp}/${T.hp}</span><span class="stat">공격 ${T.atk}</span><span class="stat">방어 ${T.def}</span><span class="stat">이동 ${T.mov}</span><span class="stat">사거리 ${T.rmin===T.rmax?T.rmin:T.rmin+'~'+T.rmax}</span><br>
+      <span style="color:var(--mut);font-size:13px">${T.desc}</span><br>${tinfo}`;
+  }else{
+    let extra='';
+    if(t.t==='village')extra='보병이 점령하면 매 턴 +50 골드, 아군 회복 +2';
+    else if(t.t==='castle')extra=t.owner===0?'비어 있으면 눌러서 유닛 모집. 아군 회복 +3':'보병으로 점령하면 승리!';
+    else if(t.t==='water')extra='지나갈 수 없음';
+    else if(t.t==='mount')extra='기병·투석기는 지나갈 수 없음';
+    else if(t.t==='forest')extra='이동이 느려지지만 방어에 유리';
+    info.innerHTML=`<div class="big">${TERR[t.t].deco||'🟩'} ${TERR[t.t].name}</div>${tinfo}<br><span style="color:var(--mut);font-size:13px">${extra}</span>`;
+  }
+}
+
+/* ---------- recruit ---------- */
+let recruitAt=null;
+function openRecruit(x,y){
+  recruitAt={x,y};
+  document.getElementById('rg').textContent=gold[0];
+  document.getElementById('ulist').innerHTML=Object.entries(UNITS).map(([k,T])=>
+    `<button class="ubtn" ${gold[0]<T.cost?'disabled':''} onclick="recruit('${k}')">
+      <div class="nm">${T.icon} ${T.name} <span class="gold" style="float:right">${T.cost}</span></div>
+      <div class="ds">HP ${T.hp} · 공 ${T.atk} · 방 ${T.def} · 이동 ${T.mov}<br>${T.desc}</div></button>`).join('');
+  openModal('recruit');
+}
+function recruit(type){
+  const T=UNITS[type];if(gold[0]<T.cost||!recruitAt||unitAt(recruitAt.x,recruitAt.y))return;
+  gold[0]-=T.cost;const u=spawn(type,0,recruitAt.x,recruitAt.y);u.acted=true;
+  log(`${uname(u)} 모집 (-${T.cost})`);closeModal('recruit');renderAll();
+}
+
+/* ---------- turns ---------- */
+async function startTurn(team){
+  cur=team;if(team===0)turn++;
+  for(const u of units)if(u.team===team){
+    u.acted=false;u.moved=false;
+    const t=tileAt(u.x,u.y);
+    if(t.owner===team&&(t.t==='village'||t.t==='castle')){
+      const h=Math.min(t.t==='castle'?3:2,UNITS[u.type].hp-u.hp);
+      if(h>0){u.hp+=h;fxText(u.x,u.y,'+'+h,'#7dff8a')}
+    }
+  }
+  if(turn>1||team===1)gold[team]+=income(team);
+  else gold[team]+=0;
+  sel=null;phase='idle';clearHL();
+  busy=true;renderAll();
+  await banner(`${turn}턴 · ${TEAMN[team]}의 차례`,team?'#ff9a9a':'#9cc8ff');
+  busy=false;renderAll();
+  if(team===1&&!over)await aiTurn();
+}
+async function endTurn(){
+  if(busy||over||cur!==0)return;
+  sel=null;phase='idle';clearHL();
+  await startTurn(1);
+}
+
+/* ---------- AI ---------- */
+function distField(type,goals){
+  const D=new Array(W*H).fill(Infinity),pq=[];
+  for(const g of goals){D[key(g.x,g.y)]=0;pq.push([0,g.x,g.y])}
+  while(pq.length){
+    pq.sort((a,b)=>a[0]-b[0]);const [d,x,y]=pq.shift();if(d>D[key(x,y)])continue;
+    for(const [dx,dy] of DIRS){const nx=x+dx,ny=y+dy;if(!inb(nx,ny))continue;
+      const c=mcost(type,map[y][x].t===undefined?'plain':map[ny][nx].t);if(!isFinite(c))continue;
+      const nd=d+c;if(nd<D[key(nx,ny)]){D[key(nx,ny)]=nd;pq.push([nd,nx,ny])}}
+  }
+  return D;
+}
+function aiPlan(u){
+  const T=UNITS[u.type],r=reachable(u),enemies=units.filter(e=>e.team!==u.team);
+  const bc=findCastle(0),rc=findCastle(1);
+  let goals;
+  if(u.type==='inf'){
+    goals=[{x:bc.x,y:bc.y}];
+    for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(map[y][x].t==='village'&&map[y][x].owner!==1)goals.push({x,y});
+  }else goals=enemies.length?enemies.map(e=>({x:e.x,y:e.y})):[bc];
+  const df=distField(u.type,goals);
+  const threat=enemies.filter(e=>md(e.x,e.y,rc.x,rc.y)<=4);
+  let best=null;
+  for(const [k] of r.res){
+    const x=ux(k),y=uy(k),t=map[y][x];
+    const dd=isFinite(df[k])?df[k]:60;
+    let s=-dd+TERR[t.t].def*.5;
+    if(x===rc.x&&y===rc.y)s-=4;
+    if(T.cap&&(t.t==='village'||t.t==='castle')&&t.owner!==1)s+=t.t==='castle'?1000:12;
+    if(u.type==='arc'||u.type==='cat'){for(const e of enemies)if(md(x,y,e.x,e.y)===1)s-=3}
+    if(threat.length)s-=Math.min(...threat.map(e=>md(x,y,e.x,e.y)))*.4;
+    let target=null,as=0;
+    for(const e of targetsFrom(u,x,y,k!==key(u.x,u.y))){
+      const f=forecast(u,x,y,e),ec=UNITS[e.type].cost;
+      let v=f.dmg/UNITS[e.type].hp*ec/10+(f.left===0?ec/12:0)-f.counter/T.hp*T.cost/10*.8;
+      if(f.aLeft===0)v-=T.cost/8;
+      if(v>as){as=v;target=e}
+    }
+    if(target)s+=as+6;
+    s+=Math.random()*.3;
+    if(!best||s>best.s)best={s,k,target};
+  }
+  return {best,r};
+}
+async function aiTurn(){
+  busy=true;renderPanel();
+  const order={arc:0,cat:1,cav:2,inf:3};
+  const mine=units.filter(u=>u.team===1).sort((a,b)=>order[a.type]-order[b.type]);
+  for(const u of mine){
+    if(over)return;
+    if(!units.includes(u))continue;
+    const {best,r}=aiPlan(u);if(!best)continue;
+    sel=u;renderUnits();
+    const path=pathTo(r,key(u.x,u.y),best.k);
+    if(path.length){await moveAlong(u,path);u.moved=true}
+    await sleep(120);
+    if(best.target&&units.includes(best.target)){await attack(u,best.target);busy=true}
+    else if(units.includes(u))finish(u);
+    sel=null;busy=true;renderAll();
+    await sleep(200);
+  }
+  if(over)return;
+  // 모집
+  const rc=findCastle(1);
+  if(rc&&map[rc.y][rc.x].owner===1&&!unitAt(rc.x,rc.y)){
+    const mineN=t=>units.filter(u=>u.team===1&&u.type===t).length;
+    const theirN=t=>units.filter(u=>u.team===0&&u.type===t).length;
+    let want;
+    if(mineN('inf')<2)want='inf';
+    else if(theirN('cav')>=2)want='inf';
+    else if(theirN('arc')+theirN('cat')>=2)want='cav';
+    else if(theirN('inf')>=3)want=gold[1]>=250&&Math.random()<.5?'cat':'arc';
+    else want=['inf','arc','cav','cav','cat'][Math.floor(Math.random()*5)];
+    if(gold[1]<UNITS[want].cost){
+      // 돈을 모으는 중이 아니라면 살 수 있는 것 중 고르기
+      const cheap=['cav','arc','inf'].find(t=>gold[1]>=UNITS[t].cost);
+      if(cheap&&Math.random()<.7)want=cheap;else want=null;
+    }
+    if(want){gold[1]-=UNITS[want].cost;const nu=spawn(want,1,rc.x,rc.y);nu.acted=true;log(`${uname(nu)} 모집`)}
+  }
+  busy=false;renderAll();
+  await sleep(250);
+  if(!over)await startTurn(0);
+}
+
+/* ---------- ui misc ---------- */
+function openModal(n){document.getElementById('m-'+n).classList.add('on')}
+function closeModal(n){document.getElementById('m-'+n).classList.remove('on')}
+function confirmNew(){if(busy&&!over)return;newGame()}
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){for(const n of ['help','recruit'])closeModal(n);if(cur===0&&!busy)doCancel()}
+  if((e.key==='e'||e.key==='E')&&!document.querySelector('.modal.on'))endTurn();
+});
+document.addEventListener('contextmenu',e=>{if(e.target.closest('#board')){e.preventDefault();if(cur===0&&!busy)doCancel()}});
+function fit(){const b=document.getElementById('board');document.documentElement.style.setProperty('--ts',(b.clientWidth/W)+'px')}
+window.addEventListener('resize',fit);
+newGame();fit();openModal('help');
+</script>
+</body>
+</html>
