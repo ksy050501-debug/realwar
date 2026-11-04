@@ -218,6 +218,7 @@ function makeGen(fac,q=0){
   let nm;do{nm=pick(SUR)+pick(GIV)}while(usedNames.has(nm));usedNames.add(nm);
   const g={id:gens.length,name:nm,war:clamp(RI(40,90)+q,30,99),int:clamp(RI(35,90)+q,30,99),pol:clamp(RI(30,90)+q,30,99),
     loy:RI(60,95),amb:RI(10,95),trait:Math.random()<.75?pick(NORMAL_TRAITS):null,fac,army:null,status:fac<0?'wander':'active',captor:null,rewarded:false};
+  g.amb=clamp(Math.round(g.pol*0.85-12+RI(-12,18)),5,99);
   gens.push(g);return g;
 }
 function makeArmy(fac,prov,gen,t){
@@ -227,7 +228,7 @@ function makeArmy(fac,prov,gen,t){
 }
 const armiesIn=(pid,fac)=>armies.filter(a=>a.prov===pid&&(fac===undefined||a.fac===fac));
 const ownProvs=fid=>provs.filter(p=>p.owner===fid);
-const idleGens=fid=>gens.filter(g=>g.fac===fid&&g.status==='active'&&g.army==null);
+const idleGens=fid=>gens.filter(g=>g.fac===fid&&g.status==='active'&&g.army==null&&g.gov==null);
 function facTroops(fid){let n=0;for(const a of armies)if(a.fac===fid)n+=sum(a.t);for(const p of provs)if(p.owner===fid)n+=sum(p.gar);return n}
 function facPower(fid){let n=0;for(const a of armies)if(a.fac===fid)n+=sum(a.t)*(0.7+a.train/250+a.exp/300);for(const p of provs)if(p.owner===fid)n+=sum(p.gar)*0.6;return n}
 function fname(fid){return fid<0?'<span class="mut">재야</span>':`<span style="color:${facs[fid].color};font-weight:700">${facs[fid].name}</span>`}
@@ -404,6 +405,7 @@ function finishBattle(B){
       if(back&&sum(x.t)>200){x.prov=back.id;applyLoss(x.t,sum(x.t)*(B.retreated?.1:.2));x.mor=clamp(x.mor-15,5,100)}
       else{for(const k of TYPES)pow[k]+=Math.round(x.t[k]*.4);const cg=destroyArmy(x,af);if(cg)rep.captured.push(cg)}}
     for(const k of TYPES)pow[k]+=Math.round(p.gar[k]*.4);rep.absorbed=sum(pow);
+    {const og=validGov(p);if(og){og.gov=null;log(`🏛️ ${p.name} 태수 ${gname(og)}이(가) 성을 버리고 달아났다.`)}p.gov=null}
     p.gar=pow;p.owner=af;p.order=30;p.wall=Math.max(0,p.wall-15);p.ambush=false;
     for(const x of B.atk)if(armies.includes(x)&&armiesIn(p.id,af).length<3)x.prov=p.id;
     if(old>=0){addRel(af,old,-15);onProvinceLost(old,p,af)}
@@ -489,6 +491,7 @@ function provAction(fid,p,kind,type){
     f.gold-=UT[type].cost;p.gar[type]+=500+(facHasTrait(fid,'모병가')?200:0)+(p.spec==='barracks'?200:0);p.order=Math.max(0,p.order-6);
   }
   if(f.cap===p.id&&!f.capTemp)p.order=Math.max(p.order,capL(f).floor);
+  govFloor(p);
   p.acted=true;return null;
 }
 
@@ -578,7 +581,7 @@ const atWar=fid=>facs.some(o=>o.alive&&o.id!==fid&&dip(fid,o.id).state==='war');
 function aiTurn(f){
   if(!f.alive)return;
   f.dipActed={};
-  aiCapital(f);aiDiplomacy(f);aiDomestic(f);aiForm(f);
+  aiCapital(f);aiDiplomacy(f);aiGovern(f);aiDomestic(f);aiForm(f);
   const order=armies.filter(a=>a.fac===f.id).sort((a,b)=>sum(b.t)-sum(a.t));
   for(const a of order){if(!f.alive||over)return;if(armies.includes(a))aiArmy(f,a)}
 }
@@ -860,6 +863,53 @@ function startScreen(){
    <div class="btns"><button onclick="openSave()">🔑 이름+비밀번호로 불러오기</button><button onclick="askNew()">🔄 새 게임</button><button class="pri" onclick="loadAuto()">▶ 이어하기</button></div>`);
 }
 
+/* ================= 태수 ================= */
+function govEffect(g){const pol=g.pol;return {dev:(pol-55)/12,keep:pol>=60,drop:pol<45?(45-pol)/6:0}}
+function govText(g){const e=govEffect(g);
+  if(e.dev>=0.5)return `<span style="color:#7dff9a">농업·상업 약 +${e.dev.toFixed(1)}/턴${e.keep?' · 민심 하락 없음':''}</span>`;
+  if(e.dev>-0.5)return `<span class="mut">거의 효과 없음</span>`;
+  return `<span style="color:#ff8a8a">농업·상업 약 ${e.dev.toFixed(1)}/턴${e.drop?` · 민심 -${e.drop.toFixed(1)}/턴 ⚠️민란 위험`:''}</span>`}
+const sround=x=>{const f=Math.floor(x);return f+(Math.random()<x-f?1:0)};
+function validGov(p){if(p.gov==null)return null;const g=gens[p.gov];if(!g||g.gov!==p.id||g.fac!==p.owner||g.status!=='active'||g.army!=null){if(g&&g.gov===p.id)g.gov=null;p.gov=null;return null}return g}
+function govTick(f){
+  for(const p of ownProvs(f.id)){const g=validGov(p);if(!g)continue;const e=govEffect(g);
+    const d=sround(Math.abs(e.dev))*Math.sign(e.dev);p.agri=clamp(p.agri+d,0,100);p.comm=clamp(p.comm+sround(Math.abs(e.dev))*Math.sign(e.dev),0,100);
+    if(e.drop)p.order=clamp(p.order-sround(e.drop),0,100);
+    if(e.keep){p.order=Math.max(p.order,p.govMin||0);p.govMin=p.order}}
+}
+function govFloor(p){const g=validGov(p);if(g&&govEffect(g).keep)p.order=Math.max(p.order,p.govMin||0)}
+function appointGov(pid,gid){const p=provs[pid],g=gens[gid],f=facs[p.owner];
+  if(!g||g.fac!==p.owner||g.army!=null||g.gov!=null)return '임명할 수 없는 장수입니다.';if(f.cap===pid&&!f.capTemp)return '수도는 군주가 직접 다스립니다.';
+  const old=validGov(p);if(old)old.gov=null;p.gov=g.id;g.gov=pid;p.govMin=p.order;g.lowTurns=0;return null}
+function doAppoint(pid){const gid=+document.getElementById('govSel').value;const e=appointGov(pid,gid);if(e)return toast(e);const g=gens[gid];log(`🏛️ ${gname(g)}을(를) <b>${provs[pid].name}</b> 태수로 임명했다.`);renderAll()}
+function dismissGov(pid){const p=provs[pid],g=validGov(p);if(!g)return;g.gov=null;p.gov=null;log(`🏛️ ${gname(g)}을(를) ${p.name} 태수에서 해임했다.`);renderAll()}
+function governorRevolt(g){
+  const old=facs[g.fac],p=provs[g.gov];if(!p||!old)return;
+  const lands=[p,...p.nb.map(i=>provs[i]).filter(q=>q.owner===old.id&&old.cap!==q.id)];
+  const nf=makeFaction(g.name.slice(0,1)+p.name.slice(0,1)+'국');nf.cap=p.id;nf.gold=400;nf.food=600;nf.guard=500;
+  for(const q of lands){
+    for(const a of armiesIn(q.id,old.id)){const back=q.nb.map(i=>provs[i]).find(x=>x.owner===old.id&&!lands.includes(x));if(back&&armiesIn(back.id,old.id).length<3)a.prov=back.id;else destroyArmy(a,nf.id)}
+    if(q!==p){const og=validGov(q);if(og){og.gov=null}}q.gov=null;q.owner=nf.id;q.order=Math.max(q.order,50);q.ambush=false}
+  g.gov=null;g.fac=nf.id;g.loy=100;g.lowTurns=0;
+  const t=T0();for(const k of TYPES){const take=Math.floor(p.gar[k]*.6);t[k]=take;p.gar[k]-=take}if(sum(t)<800)t.inf+=800;makeArmy(nf.id,p.id,g.id,t);
+  for(const o of facs)if(o!==nf)dip(nf.id,o.id).rel=RI(-10,10);dip(nf.id,old.id).state='war';dip(nf.id,old.id).rel=-70;
+  log(`👑 <b>태수의 반란!</b> ${fname(old.id)}의 ${gname(g)}이(가) ${lands.map(q=>q.name).join('·')} ${lands.length}곳을 이끌고 ${fname(nf.id)}을(를) 세웠다!`);
+  if(old.id===ME)events.push({title:'👑 태수의 반란',html:`충성을 잃은 태수 <b>${g.name}</b>이(가) <b>${lands.map(q=>q.name).join(', ')}</b> ${lands.length}곳을 이끌고 독립해 ${fname(nf.id)}을(를) 세웠습니다!<br><span class="mut">태수의 충성이 30 이하로 3턴 이어지면 반란이 일어납니다. 포상으로 관리하거나, 충신 특기를 가진 장수를 태수로 쓰세요.</span>`,btns:[{l:'괘씸하다!'}]});
+}
+function govLoyaltyCheck(g){
+  if(g.loy<=30&&!(g.grace&&turn<g.grace)){g.lowTurns=(g.lowTurns||0)+1;
+    if(g.lowTurns>=3){governorRevolt(g);return}
+    if(g.fac===ME)events.push({title:'⚠️ 태수의 충성 위험',html:`<b>${provs[g.gov].name}</b> 태수 <b>${g.name}</b>의 충성이 ${g.loy}입니다. (<b>${g.lowTurns}/3턴</b>) 3턴 이어지면 주변 영토를 이끌고 독립합니다!<br><span class="mut">장수 창에서 포상을 내리거나 태수에서 해임하세요.</span>`,btns:[{l:'장수 창 열기',fn:()=>setTimeout(openGens,50)},{l:'확인'}]});
+  }else g.lowTurns=0;
+}
+function aiGovern(f){
+  const idle=idleGens(f.id).sort((a,b)=>b.pol-a.pol);const nArm=armies.filter(a=>a.fac===f.id).length;
+  const np=ownProvs(f.id).length;let ng=gens.filter(g=>g.fac===f.id&&g.gov!=null).length;
+  for(const g of idle){if(g.pol<60)break;if(ng>=Math.floor(np/3))break;if(nArm<2&&idleGens(f.id).length<=1)break;ng++;
+    const p=ownProvs(f.id).filter(q=>q.id!==f.cap&&!validGov(q)).sort((a,b)=>(isFrontier(a)-isFrontier(b))||((b.agri+b.comm)-(a.agri+a.comm)))[0];if(!p)break;appointGov(p.id,g.id)}
+  for(const g of gens)if(g.fac===f.id&&g.gov!=null&&g.loy<42&&f.gold>300&&!g.rewarded&&Math.random()<.7){f.gold-=100;g.loy=clamp(g.loy+RI(8,14),0,100);g.rewarded=true}
+}
+
 /* ================= 투항 권유 ================= */
 function surrenderChance(a,p,extra,gold=0){
   const A=makeSide([a,...(extra||[])],p,false),D=makeSide(p.owner>=0?armiesIn(p.id,p.owner):[],p,true);D.wall=siegeWall(A,p);
@@ -892,6 +942,7 @@ function doSurrender(a,p,extra,gold=0){
     facs[af].gold-=gold;
     const joined=[];let troops=sum(p.gar);
     if(old>=0)for(const x of armiesIn(p.id,old)){x.fac=af;x.acted=true;troops+=sum(x.t);const g=gens[x.gen];if(g){g.fac=af;g.loy=RI(30,40);g.grace=turn+10;joined.push(g.name)}}
+    {const og=validGov(p);if(og){og.fac=af;og.loy=RI(30,40);og.grace=turn+10;og.lowTurns=0;joined.push(og.name+'(태수)')}}
     p.owner=af;p.order=Math.max(p.order,50);p.wall=Math.max(0,p.wall-3);p.ambush=false;
     for(const x of [a,...extra])if(armiesIn(p.id,af).length<3)x.prov=p.id;
     log(`🏳️ ${fname(old)} <b>${p.name}</b>이(가) ${fname(af)}에 투항했다! (병력 ${fmt(troops)} 흡수${joined.length?`, 장수 ${joined.join(', ')} 귀순`:''})`);
@@ -960,7 +1011,7 @@ function spawnLegend(){
   if(gens.filter(g=>g.status==='legend').length>=2)return;
   const type=Math.random()<.5?'war':'int';const g=makeGen(-1,0);
   if(type==='war'){g.war=RI(95,99);g.int=RI(45,85)}else{g.int=RI(95,99);g.war=RI(40,75)}
-  g.pol=RI(60,95);g.amb=RI(10,45);g.loy=90;g.trait=pick(LEGEND_TRAITS[type]);g.status='legend';g.legend=true;g.timer=3;
+  g.pol=RI(60,95);g.amb=clamp(Math.round(g.pol*0.85-12+RI(-12,18)),5,99);g.loy=90;g.trait=pick(LEGEND_TRAITS[type]);g.status='legend';g.legend=true;g.timer=3;
   const neutral=provs.filter(p=>p.owner<0&&!legendAt(p.id));g.loc=(neutral.length&&Math.random()<.5?pick(neutral):pick(provs)).id;
   const p=provs[g.loc];
   log(`🌟 <b>전설의 인재 출현!</b> ${gname(g)}(무 ${g.war}·지 ${g.int}, ✨${g.trait})이(가) <b>${p.name}</b>에 나타났다는 소문이 천하에 퍼졌다.`);
@@ -1041,7 +1092,7 @@ function upkeep(){
         if(isWinter(month)){applyLoss(a.t,sum(a.t)*.05)}}
     }
     for(const p of own){if(p.order<60)p.order++;}
-    capitalTick(f,own);
+    capitalTick(f,own);govTick(f);
   }
   cleanupArmies();
   // 외교 관계 변화
@@ -1055,6 +1106,7 @@ function upkeep(){
   for(const g of gens){if(g.status!=='active'||g.fac<0)continue;const f=facs[g.fac];
     let dl=RI(-2,1);if(g.amb>70)dl-=1;const rank=facs.filter(x=>x.alive).sort((x,y)=>facPower(y.id)-facPower(x.id)).findIndex(x=>x.id===f.id);
     if(rank===0)dl+=1;if(rank>=3)dl-=1;g.loy=clamp(g.loy+dl,g.trait==='충신'?50:0,100);
+    if(g.gov!=null){if(validGov(provs[g.gov]))govLoyaltyCheck(g);continue}
     if(g.loy<30&&!(g.grace&&turn<g.grace)&&Math.random()<((30-g.loy)/100+g.amb/400)*0.5)generalBetrays(g);
   }
   // 반란
@@ -1190,6 +1242,7 @@ function renderMap(){
     if(TERR[p.terr].icon)s+=`<text x="${x+15}" y="${y-2}" font-size="13" text-anchor="middle" opacity=".85" pointer-events="none">${TERR[p.terr].icon}</text>`;
     const isCap=f&&f.cap===p.id;
     s+=`<text x="${x}" y="${y-13}" font-size="11" font-weight="700" text-anchor="middle" fill="#fff" stroke="#000" stroke-width="2.5" paint-order="stroke" pointer-events="none">${isCap?(f.capTemp?'☆':'★'):''}${p.name}</text>`;
+    if(p.gov!=null&&gens[p.gov]&&gens[p.gov].gov===p.id)s+=`<text x="${x+18}" y="${y+30}" font-size="11" text-anchor="middle" pointer-events="none">${gens[p.gov].lowTurns?'⚠️':'🏛️'}</text>`;
     if(p.spec)s+=`<text x="${x-15}" y="${y-1}" font-size="12" text-anchor="middle" pointer-events="none">${SPECS[p.spec].icon}</text>`;
     const lgd=legendAt(p.id);if(lgd)s+=`<circle cx="${x}" cy="${y}" r="${HS-5}" fill="none" stroke="#ffe066" stroke-width="3.5" pointer-events="none"><animate attributeName="stroke-opacity" values="1;.15;1" dur="1.4s" repeatCount="indefinite"/></circle><text x="${x+16}" y="${y+30}" font-size="15" text-anchor="middle" pointer-events="none">🌟</text>`;
     // 군단 깃발
@@ -1241,6 +1294,14 @@ function renderPanel(){
   if(isCap&&!f.capTemp)h+=`<div style="font-size:13px">👑 근위대 <b>${fmt(f.guard||0)}</b> / ${fmt(capL(f).gCap)} <span class="mut">(정예 창병 · 수도 방어 전용 · 매 턴 +${capL(f).gInc})</span></div>`;
   if(mine&&!over&&isCap&&!f.capTemp&&CAPLV[(f.capLv||1)+1])h+=`<div class="grid2" style="margin-top:8px"><button class="org" onclick="askUpgrade()">👑 수도 강화 → Lv.${f.capLv+1} <span class="g">${CAPLV[f.capLv+1].cost}</span></button><span class="mut" style="font-size:12px;align-self:center">영향권 ${CAPLV[f.capLv+1].r}칸 · 성장 +${CAPLV[f.capLv+1].g}/턴</span></div>`;
   if(mine&&!over&&(!isCap||f.capTemp))h+=`<div class="grid2" style="margin-top:8px"><button class="org" onclick="askCapital(${p.id})">🏯 수도 ${f.capTemp?'재건':'이전'} <span class="g">${capCost(f)}</span></button><span class="mut" style="font-size:12px;align-self:center">${p.spec?'명당! 수도로 삼으면 특화 효과':'수도 효과: 주변 자동 성장'}</span></div>`;
+  if(mine&&!over&&!(isCap&&!f.capTemp)){const gv=validGov(p),cand=idleGens(ME).sort((a,b)=>b.pol-a.pol);
+    h+=`<div class="army" style="border-color:#c9a86b"><b>🏛️ 태수</b> <span class="mut" style="font-size:12px">— 정치가 높으면 자동 개발·민심 유지, 낮으면 쇠퇴·민란. 충성 30 이하 3턴이면 주변 땅을 이끌고 독립!</span>
+      ${gv?`<div style="font-size:13px;margin-top:4px"><b>${gv.name}</b> 정치 ${gv.pol} · 충성 <b style="color:${gv.loy<=30?'#ff7a7a':gv.loy<50?'#ffd27a':'#9be37b'}">${gv.loy}</b>${gv.trait?` · ✨${gv.trait}`:''} · 야망 ${gv.amb>70?'🔥높음':gv.amb>40?'보통':'낮음'}${gv.lowTurns?` · <b style="color:#ff7a7a">⚠️반란 ${gv.lowTurns}/3</b>`:''}<br>${govText(gv)}</div>
+        <div class="grid2"><button class="sm org" ${gv.rewarded||facs[ME].gold<100?'disabled':''} onclick="reward(${gv.id},true)">포상 <span class="g">100</span></button><button class="sm" onclick="dismissGov(${p.id})">해임</button></div>`
+      :cand.length?`<div class="grid2" style="margin-top:4px"><select id="govSel" style="grid-column:span 2">${cand.map(g=>`<option value="${g.id}">${g.name} — 정치 ${g.pol} · 충성 ${g.loy}${g.trait?' · '+g.trait:''} (${govEffect(g).dev>=0?'+':''}${govEffect(g).dev.toFixed(1)}/턴)</option>`).join('')}</select>
+        <button class="sm pri" onclick="doAppoint(${p.id})">🏛️ 태수 임명</button><span class="mut" style="font-size:12px;align-self:center">대기 장수 중에서</span></div>`
+      :'<div class="mut" style="font-size:12.5px;margin-top:4px">임명할 대기 장수가 없습니다. (군단을 맡지 않은 장수만 가능)</div>'}</div>`;
+  }
   if(mine&&!over){
     const dis=p.acted?'disabled':'';
     h+=`<h3 style="margin-top:10px">🏛️ 내정 ${p.acted?'<span class="mut">(이번 턴 완료)</span>':'<span class="mut">(영토당 턴 1회)</span>'}${devMul(facs[ME]).c>1?` <span class="tag">수도 Lv.${facs[ME].capLv}: 비용 ×${devMul(facs[ME]).c} · 효과 ×${devMul(facs[ME]).g}</span>`:''} <button class="sm" onclick="toggleBulk()">📋 여러 곳 한번에</button></h3><div class="grid2">
@@ -1399,11 +1460,11 @@ function openGens(){
    <table><tr><th>이름</th><th>특기</th><th>무력</th><th>지력</th><th>정치</th><th>충성</th><th>야망</th><th>위치</th><th></th></tr>
    ${list.map(g=>{const a=g.army!=null?armies.find(x=>x.id===g.army):null;return `<tr><td><b>${g.name}</b></td><td title="${g.trait?TRAITS[g.trait]:''}">${g.trait?'✨'+g.trait+'<br><span class="mut" style="font-size:11px">'+TRAITS[g.trait]+'</span>':'-'}</td><td>${g.war}</td><td>${g.int}</td><td>${g.pol}</td>
     <td style="color:${g.loy<35?'#ff7a7a':g.loy<60?'#ffd27a':'#9be37b'};font-weight:700">${g.loy}${g.grace&&turn<g.grace?`<br><span style="font-size:11px;color:#9cc8ff">🔒 ${g.grace-turn}턴 보호</span>`:''}</td><td>${g.amb>70?'🔥높음':g.amb>40?'보통':'낮음'}</td>
-    <td>${a?provs[a.prov].name+' 군단':'<span class="mut">대기</span>'}</td><td><button class="sm org" ${g.rewarded||facs[ME].gold<100?'disabled':''} onclick="reward(${g.id})">포상 <span class="g">100</span></button></td></tr>`}).join('')}</table>
+    <td>${a?provs[a.prov].name+' 군단':g.gov!=null?`🏛️ ${provs[g.gov].name} 태수${g.lowTurns?`<br><span style="color:#ff7a7a;font-size:11px">⚠️반란 ${g.lowTurns}/3</span>`:''}`:'<span class="mut">대기</span>'}</td><td><button class="sm org" ${g.rewarded||facs[ME].gold<100?'disabled':''} onclick="reward(${g.id})">포상 <span class="g">100</span></button></td></tr>`}).join('')}</table>
    <div class="btns"><button class="grn" ${facs[ME].hired===turn||facs[ME].gold<300?'disabled':''} onclick="hireGen()">🧑 장수 모집 <span class="g">300</span> <span style="font-weight:400;font-size:11px">(턴당 1회, 평범한 장수)</span></button><button onclick="closeModal()">닫기</button></div>`);
 }
 function hireGen(){const f=facs[ME];if(f.gold<300||f.hired===turn)return;f.gold-=300;f.hired=turn;const g=makeGen(ME,RI(-8,3));g.loy=RI(60,80);log(`🧑 ${gname(g)}을(를) 장수로 모집했다.`);toast(`${g.name}(무${g.war}·지${g.int}${g.trait?' · '+g.trait:''}) 모집!`);renderTop();openGens()}
-function reward(id){const g=gens[id];if(facs[ME].gold<100)return;facs[ME].gold-=100;g.loy=clamp(g.loy+RI(8,14),0,100);g.rewarded=true;renderTop();openGens()}
+function reward(id,fromPanel){const g=gens[id];if(facs[ME].gold<100)return;facs[ME].gold-=100;g.loy=clamp(g.loy+RI(8,14),0,100);g.rewarded=true;if(g.lowTurns&&g.loy>30)g.lowTurns=0;if(fromPanel){renderAll()}else{renderTop();openGens()}}
 
 function openDiplo(){
   const me=facs[ME];
@@ -1492,6 +1553,7 @@ function openHelp(first){
    <li><b>보급</b> — 도읍과 이어진 땅에서만 보급. 끊기면 🚚보급대를 보내세요. 겨울은 혹독, 가을엔 추수!</li>
    <li><b>외교</b> — 선물·교역·군량 거래·휴전·동맹·공물·적 장수 매수. 휴전을 깨면 배신자.</li>
    <li><b>격변</b> — 충성 낮은 장수는 이적·독립, 민심 낮은 땅엔 민란, 재야엔 신흥 세력이 일어나요.</li>
+   <li><b>🏛️ 태수</b> — 군단을 맡지 않은 장수를 영토의 태수로 앉혀요. 정치 60 이상이면 매 턴 농업·상업이 저절로 오르고 민심이 떨어지지 않아요(징병은 안 함). 정치 45 미만이면 오히려 쇠퇴하고 민심이 떨어져 민란이 나요. 정치가 높을수록 야망도 커서, 충성 30 이하가 3턴 이어지면 맞닿은 우리 땅을 모두 끌어모아 독립해요. 충신 특기 + 높은 정치 = 최고의 태수!</li>
    <li><b>📋 일괄 내정</b> — 상단 [📋 일괄 내정]을 켜고 내 땅 여러 곳을 눌러(또는 '전선만', '후방만' 버튼) 한꺼번에 개발·징병하세요. 수도 레벨이 오르면 전국 개발 비용과 효과가 함께 커져요.</li>
    <li><b>📊 세력도</b> — 모든 나라의 영토·금·군량·병력·수도와, 나라끼리의 전쟁·동맹 관계표를 볼 수 있어요. 외교 창에서 다른 나라에 <b>⚔️공동 공격</b>을 제안할 수도 있어요.</li>
    <li><b>🤝 합동 공격</b> — 같은 적 땅에 붙어 있는 내 군단이 여럿이면 공격 창에서 체크해 함께 싸울 수 있어요. 전력이 합쳐지고, 가장 무력 높은 장수가 총지휘해요. 투항 권유도 함께 하면 성공률이 올라가요.</li>
