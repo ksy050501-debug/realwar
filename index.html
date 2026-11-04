@@ -96,6 +96,7 @@ select{font-family:inherit;background:#2f3850;color:var(--txt);border:1px solid 
   <button onclick="openDiplo()">🤝 외교</button>
   <button onclick="openGens()">👤 장수</button>
   <button onclick="openStatus()">📊 세력도</button>
+  <button id="saveChip" onclick="openSave()">💾 저장</button>
   <button id="bulkBtn" onclick="toggleBulk()">📋 일괄 내정</button>
   <button onclick="openHelp()">❔ 도움말</button>
   <button onclick="askNew()">새 게임</button>
@@ -256,7 +257,7 @@ function newGame(diff){
   log(`<b>천하력 ${year}년.</b> 다섯 나라가 대륙의 패권을 두고 일어섰다. 그대는 ${fname(ME)}의 군주다.`);
   selP=facs[ME].cap;
   renderAll();
-  if(!AUTO)openHelp(true);
+  if(!AUTO&&!NOHELP)openHelp(true);
 }
 
 /* ================= 전투 ================= */
@@ -277,7 +278,7 @@ const LEGEND_TRAITS={war:['군신','패왕','철옹성'],int:['와룡','명재�
 const facHasTrait=(fid,tr)=>gens.some(g=>g.fac===fid&&g.status==='active'&&g.trait===tr);
 const SPECS={granary:{n:'곡창',icon:'🌾',d:'농업 개발 ×1.5 · 수도일 때 주변 농업 +2/턴'},market:{n:'상도',icon:'💰',d:'상업 개발 ×1.5 · 수도일 때 주변 상업 +2/턴'},fortress:{n:'요새',icon:'🏰',d:'성벽 보수 ×1.5 · 수도일 때 성벽 +3/턴, 방어 +15%'},barracks:{n:'병영',icon:'⚔️',d:'징병 +200명 · 수도일 때 매턴 창병 +100'},shrine:{n:'명승',icon:'🎐',d:'구휼 효과 ×1.5 · 수도일 때 전국 민심 +1/턴'}};
 const CAP_COST=1000,CAP_REBUILD=600;
-const CAPLV={1:{r:1,g:1,floor:50,gInc:100,gCap:1500},2:{r:2,g:2,floor:60,gInc:150,gCap:2500,cost:1200},3:{r:3,g:3,floor:70,gInc:200,gCap:4000,cost:2000}};
+const CAPLV={1:{r:1,g:1,floor:50,gInc:100,gCap:1500},2:{r:2,g:2,floor:60,gInc:150,gCap:2500,cost:1200},3:{r:3,g:3,floor:70,gInc:200,gCap:4000,cost:2000},4:{r:4,g:4,floor:75,gInc:250,gCap:5500,cost:3200},5:{r:5,g:5,floor:80,gInc:300,gCap:7000,cost:5000}};
 const capL=f=>CAPLV[f.capLv||1];
 function makeSide(list,prov,isDef){
   const t=T0();let w=0,train=0,exp=0,mor=0,skill=0,gen={name:'수비대장',war:38,int:38,trait:null};
@@ -676,7 +677,7 @@ function aiArmy(f,a){
 }
 
 /* ================= 개발 배율 · 일괄 내정 ================= */
-const DEVMUL={1:{c:1,g:1},2:{c:1.6,g:1.5},3:{c:2.4,g:2}};
+const DEVMUL={1:{c:1,g:1},2:{c:1.6,g:1.5},3:{c:2.4,g:2},4:{c:3.4,g:2.6},5:{c:4.5,g:3.2}};
 const devMul=f=>DEVMUL[f.capTemp?1:(f.capLv||1)];
 function devCost(f,kind){const base={agri:100,comm:100,wall:120}[kind];return base?Math.round(base*devMul(f).c):0}
 const reliefCost=f=>Math.round(150*devMul(f).c);
@@ -765,6 +766,98 @@ function doJoint(fid){
     toast(`${ally.name}이(가) 수락했습니다! 함께 ${t.name}을(를) 칩니다.`);
   }else{addRel(ME,fid,-3);toast(`${ally.name}이(가) 제안을 거절했습니다.`)}
   renderAll();openDiplo();
+}
+
+/* ================= 저장 · 불러오기 ================= */
+let CLOUD=null,SAVING=false,needSave=false,lastSaveTxt='';
+(async()=>{try{if(window.claude&&claude.use)CLOUD=await claude.use('db')}catch(e){CLOUD=null}renderSaveChip()})();
+const LS={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v);return true}catch(e){return false}},del:k=>{try{localStorage.removeItem(k)}catch(e){}}};
+function serialize(){return JSON.stringify({v:1,provs,seaCells,facs,gens,armies,dips,year,month,turn,uidA,over,DIFF,logLines:logLines.slice(-60),used:[...usedNames]})}
+function deserialize(str){
+  const o=JSON.parse(str);if(!o||!o.provs)throw new Error('bad');
+  provs=o.provs;seaCells=o.seaCells;facs=o.facs;gens=o.gens;armies=o.armies;dips=o.dips;year=o.year;month=o.month;turn=o.turn;uidA=o.uidA;over=!!o.over;
+  if(o.DIFF&&DIFFS[o.DIFF])DIFF=o.DIFF;logLines=o.logLines||[];usedNames.clear();(o.used||[]).forEach(n=>usedNames.add(n));
+  cellAt={};for(const p of provs)cellAt[p.q+','+p.r]=p;
+  events=[];selP=facs[ME].cap;selA=null;BULK=null;pendingMove=null;BT=null;ATK_JOIN=[];
+  log('💾 저장된 천하를 불러왔다.');renderAll();
+}
+async function hashKey(name,pw){const s='chg|'+name.trim()+'|'+pw;
+  try{const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return 'k'+[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('').slice(0,40)}
+  catch(e){let h=2166136261,h2=5381;for(const c of s){const x=c.charCodeAt(0);h^=x;h=Math.imul(h,16777619)>>>0;h2=(Math.imul(h2,33)+x)>>>0}return 'f'+h.toString(16)+h2.toString(16)}}
+async function pack(str){
+  try{if(window.CompressionStream){const cs=new Blob([str]).stream().pipeThrough(new CompressionStream('gzip'));const u=new Uint8Array(await new Response(cs).arrayBuffer());let bin='';for(let i=0;i<u.length;i+=0x8000)bin+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return 'gz:'+btoa(bin)}}catch(e){}
+  return 'raw:'+str}
+async function unpack(s){if(s.startsWith('gz:')){const bin=atob(s.slice(3));const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);
+  return await new Response(new Blob([u]).stream().pipeThrough(new DecompressionStream('gzip'))).text()}return s.slice(4)}
+const saveMeta=()=>({turn,year,month,at:Date.now(),fac:facs[ME].name,prov:ownProvs(ME).length,diff:DIFF});
+async function saveSlot(name,pw){
+  const id=await hashKey(name,pw),data=await pack(serialize()),meta={name:name.trim(),...saveMeta()};
+  const local=LS.set('chsave_'+id,data)&&LS.set('chmeta_'+id,JSON.stringify(meta));
+  let cloud=false;
+  if(CLOUD){const parts=[];for(let i=0;i<data.length;i+=200000)parts.push(data.slice(i,i+200000));
+    for(let i=0;i<parts.length;i++)await CLOUD.doc(`saves/${id}/parts/p${i}`).set({d:parts[i]});
+    await CLOUD.doc('saves/'+id).set({...meta,n:parts.length});cloud=true}
+  return {local,cloud};
+}
+async function loadSlot(name,pw){
+  const id=await hashKey(name,pw);
+  if(CLOUD){try{const m=await CLOUD.doc('saves/'+id).get();if(m.exists){const md=m.data();let s='';
+    for(let i=0;i<md.n;i++){const p=await CLOUD.doc(`saves/${id}/parts/p${i}`).get();if(!p.exists)throw new Error('part');s+=p.data().d}
+    return {str:await unpack(s),meta:md,from:'cloud'}}}catch(e){}}
+  const d=LS.get('chsave_'+id);if(d)return {str:await unpack(d),meta:JSON.parse(LS.get('chmeta_'+id)||'{}'),from:'local'};
+  return null;
+}
+function slotInfo(){try{return JSON.parse(LS.get('chslot')||'null')}catch(e){return null}}
+async function autoSave(){
+  if(over)return;
+  const ok=LS.set('chsave_auto',await pack(serialize()))&&LS.set('chmeta_auto',JSON.stringify(saveMeta()));
+  lastSaveTxt=ok?`${year}.${month}✓`:'실패';
+  const sl=slotInfo();
+  if(sl&&sl.name&&sl.pw&&!SAVING){SAVING=true;try{const r=await saveSlot(sl.name,sl.pw);lastSaveTxt=`${year}.${month}✓${r.cloud?'☁️':''}`}catch(e){lastSaveTxt=`☁️실패`}SAVING=false}
+  renderSaveChip();
+}
+function renderSaveChip(){const el=document.getElementById('saveChip');if(el)el.textContent=lastSaveTxt?'💾 '+lastSaveTxt:'💾 저장'}
+function fmtMeta(m){if(!m)return '';const d=m.at?new Date(m.at):null;return `천하력 ${m.year}년 ${m.month}월 (${m.turn}턴) · ${m.fac||''} 영토 ${m.prov??'?'} · 난이도 ${DIFFS[m.diff]?.n||'-'}${d?` · ${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')} 저장`:''}`}
+function openSave(){
+  const sl=slotInfo()||{},am=JSON.parse(LS.get('chmeta_auto')||'null');
+  showModal(`<h2>💾 저장 · 불러오기</h2>
+   <p class="mut" style="font-size:13px">${CLOUD?'☁️ <b>클라우드 저장 사용 가능</b> — 저장 이름과 비밀번호만 알면 다른 기기·다른 대화에서도 이 게임 페이지를 열어 이어할 수 있어요.':'💻 지금은 <b>이 브라우저에만</b> 저장돼요. (같은 기기·같은 브라우저에서 이어하기 가능)'}</p>
+   <div class="army"><b>📝 이름 + 비밀번호로 저장</b>
+    <div class="grid2"><input id="svN" placeholder="저장 이름 (예: 성윤천하)" value="${(sl.name||'').replace(/"/g,'')}" style="padding:7px;border-radius:6px;border:1px solid var(--line);background:#11151e;color:#fff">
+    <input id="svP" type="password" placeholder="비밀번호" value="${sl.pw?'********':''}" style="padding:7px;border-radius:6px;border:1px solid var(--line);background:#11151e;color:#fff"></div>
+    <label style="font-size:13px;display:block;margin-top:6px"><input type="checkbox" id="svAuto" ${sl.name||!slotInfo()?'checked':''}> 매 턴 이 이름으로 자동 저장</label>
+    <div class="btns" style="margin-top:6px"><button class="pri" onclick="doSave()">💾 저장</button><button class="grn" onclick="doLoad()">📂 이 이름으로 불러오기</button></div>
+    <div id="svMsg" style="font-size:13px;margin-top:4px"></div></div>
+   <div class="army"><b>⏱️ 자동 저장</b> <span class="mut" style="font-size:12px">— 매 턴이 끝날 때 이 브라우저에 저장됩니다</span>
+    <div style="font-size:13px;margin-top:4px">${am?fmtMeta(am):'<span class="mut">아직 없음</span>'}</div>
+    <div class="btns" style="margin-top:6px"><button ${am?'':'disabled'} onclick="loadAuto()">⏪ 자동 저장 불러오기</button>${sl.name?`<button onclick="forgetSlot()">자동 클라우드 저장 끄기</button>`:''}</div></div>
+   <div class="btns"><button onclick="closeModal()">닫기</button></div>`);
+}
+function readPw(){const v=document.getElementById('svP').value,sl=slotInfo();return v==='********'&&sl?sl.pw:v}
+async function doSave(){
+  const n=document.getElementById('svN').value.trim(),pw=readPw(),msg=document.getElementById('svMsg');
+  if(!n||!pw){msg.innerHTML='<span style="color:#ff8a8a">이름과 비밀번호를 모두 입력하세요.</span>';return}
+  msg.textContent='저장 중…';
+  try{const r=await saveSlot(n,pw);
+    if(document.getElementById('svAuto').checked)LS.set('chslot',JSON.stringify({name:n,pw}));else LS.del('chslot');
+    lastSaveTxt=`${year}.${month}✓${r.cloud?'☁️':''}`;renderSaveChip();
+    msg.innerHTML=`<span style="color:#7dff9a">✔ 저장 완료! ${r.cloud?'☁️ 클라우드':''}${r.cloud&&r.local?' + ':''}${r.local?'💻 이 브라우저':''}</span><br><span class="mut">다음에 이 페이지를 열고 <b>${n}</b> + 비밀번호로 불러오세요.</span>`}
+  catch(e){msg.innerHTML=`<span style="color:#ff8a8a">저장 실패: ${(e&&(e.code||e.message))||'오류'}${e&&e.code==='invalid_argument'?' (이 페이지에 쓰기 권한이 없을 수 있어요)':''}</span>`}
+}
+async function doLoad(){
+  const n=document.getElementById('svN').value.trim(),pw=readPw(),msg=document.getElementById('svMsg');
+  if(!n||!pw){msg.innerHTML='<span style="color:#ff8a8a">이름과 비밀번호를 모두 입력하세요.</span>';return}
+  msg.textContent='불러오는 중…';
+  try{const r=await loadSlot(n,pw);if(!r){msg.innerHTML='<span style="color:#ff8a8a">저장을 찾지 못했어요. 이름과 비밀번호를 확인하세요.</span>';return}
+    deserialize(r.str);LS.set('chslot',JSON.stringify({name:n,pw}));closeModal();toast(`불러오기 완료 — ${fmtMeta(r.meta)}`)}
+  catch(e){msg.innerHTML=`<span style="color:#ff8a8a">불러오기 실패: ${(e&&(e.code||e.message))||'오류'}</span>`}
+}
+async function loadAuto(){const d=LS.get('chsave_auto');if(!d)return;try{deserialize(await unpack(d));closeModal();toast('자동 저장을 불러왔습니다.')}catch(e){toast('자동 저장을 읽지 못했습니다.')}}
+function forgetSlot(){LS.del('chslot');toast('매 턴 클라우드 저장을 껐습니다. (브라우저 자동 저장은 계속됩니다)');openSave()}
+function startScreen(){
+  const am=JSON.parse(LS.get('chmeta_auto')||'null');if(!am||!LS.get('chsave_auto'))return openHelp(true);
+  showModal(`<h2>🏯 천하쟁패</h2><p>이어서 할 천하가 있습니다.</p><div class="army">${fmtMeta(am)}</div>
+   <div class="btns"><button onclick="openSave()">🔑 이름+비밀번호로 불러오기</button><button onclick="askNew()">🔄 새 게임</button><button class="pri" onclick="loadAuto()">▶ 이어하기</button></div>`);
 }
 
 /* ================= 투항 권유 ================= */
@@ -857,7 +950,7 @@ function askCapital(pid){
   showModal(`<h2>🏯 ${p.name}을(를) 수도로 정할까요?</h2>
    <p>비용: <span class="g">금 ${cost}</span>${f.capTemp?' (수도 재건)':''} · 보유 금 ${f.gold}</p>
    <ul><li>수도와 맞닿은 내 영토는 매 턴 <b>농업·상업이 저절로 성장</b>하고 민심이 오릅니다.</li>
-   <li>수도의 민심은 <b>50 아래로 떨어지지 않습니다</b>. 수도에서 보급선이 시작되고, 👑근위대가 매 턴 늘어나 수도를 지킵니다.</li><li>돈을 더 들여 <b>수도 강화</b>(최대 Lv.3)를 하면 영향권이 넓어지고 성장량이 늘어납니다.</li>
+   <li>수도의 민심은 <b>50 아래로 떨어지지 않습니다</b>. 수도에서 보급선이 시작되고, 👑근위대가 매 턴 늘어나 수도를 지킵니다.</li><li>돈을 더 들여 <b>수도 강화</b>(최대 Lv.5)를 하면 영향권이 넓어지고 성장량이 늘어납니다.</li>
    <li>${p.spec?`이곳은 명당 <b>${SPECS[p.spec].icon}${SPECS[p.spec].n}</b> — ${SPECS[p.spec].d}`:'<span class="mut">이곳은 명당이 아닙니다. 지도에 🌾💰🏰⚔️🎐 표시가 있는 땅이 명당이에요.</span>'}</li>
    ${(f.capLv||1)>1&&!f.capTemp?`<li style="color:#ffd27a">⚠️ 지금 수도는 Lv.${f.capLv}입니다. 옮기면 Lv.1로 돌아갑니다.</li>`:''}<li style="color:#ff9a9a">⚠️ 수도가 함락되면 국고 30% 손실, 전국 민심 -10, 장수 충성 -10, 수도 효과 상실!</li></ul>
    <div class="btns"><button onclick="closeModal()">취소</button><button class="pri" ${f.gold<cost?'disabled':''} onclick="doCapital(${pid})">🏯 수도 지정</button></div>`);
@@ -922,6 +1015,7 @@ function endTurn(){
   facs[ME].dipActed={};
   checkVictory();
   renderAll();
+  needSave=true;
   nextEvent();
 }
 function upkeep(){
@@ -1036,7 +1130,7 @@ function gameOver(win){
 
 /* ================= 이벤트 큐 ================= */
 function nextEvent(){
-  if(!events.length){closeModal();renderAll();return}
+  if(!events.length){closeModal();renderAll();if(needSave){needSave=false;autoSave()}return}
   const e=events.shift();
   if(e.battle){const a=armies.find(x=>x.id===e.battle.aid),p=provs[e.battle.pid];
     if(over||!a||a.fac===ME||p.owner!==ME||!provs[a.prov].nb.includes(p.id)){nextEvent();return}
@@ -1403,7 +1497,7 @@ function openHelp(first){
    <li><b>🤝 합동 공격</b> — 같은 적 땅에 붙어 있는 내 군단이 여럿이면 공격 창에서 체크해 함께 싸울 수 있어요. 전력이 합쳐지고, 가장 무력 높은 장수가 총지휘해요. 투항 권유도 함께 하면 성공률이 올라가요.</li>
    <li><b>🏳️ 투항 권유</b> — 공격 대신 사신을 보내요. 내가 강할수록, 그 땅을 내 땅이 둘러쌀수록, 민심이 낮을수록 잘 받아들여요. 성공하면 병력·장수를 온전히 얻고 성벽·민심도 멀쩡해요.</li>
    <li><b>점령·귀순</b> — 전투로 점령하면 살아남은 적병 40%가 투항해 수비병이 돼요. 귀순한 장수는 충성이 낮지만 10턴 동안은 배신하지 않아요(🔒).</li>
-   <li><b>🏯 수도</b> — 수도 영향권(지도에서 수도를 누르면 노란 점선)의 내 땅은 매 턴 저절로 성장하고, 수도 민심은 일정 아래로 안 떨어져요. 👑근위대(정예병)가 매 턴 늘어나 수도를 지켜요. <b>수도 강화</b>(Lv.3까지)로 영향권 1칸씩 확장·성장량 증가·근위대 증강. 수도 이전은 금 ${CAP_COST}. 함락되면 국고 30%·민심·충성을 잃고 임시 수도가 돼요(재건 금 ${CAP_REBUILD}).</li>
+   <li><b>🏯 수도</b> — 수도 영향권(지도에서 수도를 누르면 노란 점선)의 내 땅은 매 턴 저절로 성장하고, 수도 민심은 일정 아래로 안 떨어져요. 👑근위대(정예병)가 매 턴 늘어나 수도를 지켜요. <b>수도 강화</b>(Lv.5까지)로 영향권 1칸씩 확장·성장량 증가·근위대 증강. 수도 이전은 금 ${CAP_COST}. 함락되면 국고 30%·민심·충성을 잃고 임시 수도가 돼요(재건 금 ${CAP_REBUILD}).</li>
    <li><b>명당</b> — 지도의 🌾곡창 💰상도 🏰요새 ⚔️병영 🎐명승 땅은 개발 효과가 크고, 수도로 삼으면 특별한 효과가 있어요.</li>
    <li><b>🌟 전설의 인재</b> — 무력이나 지력 95 이상의 인재가 나타나 3턴마다 옮겨 다녀요. 내 땅에 오면 스카우트! 중립 땅에선 방어를 지휘해요.</li>
   </ul>
@@ -1411,7 +1505,7 @@ function openHelp(first){
 }
 
 document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal'&&!events.length&&!BT)closeModal()});
-newGame();
+let NOHELP=true;newGame();NOHELP=false;startScreen();
 </script>
 </body>
 </html>
