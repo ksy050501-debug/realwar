@@ -226,7 +226,8 @@ function fname(fid){return fid<0?'<span class="mut">재야</span>':`<span style=
 function gname(g){return g?`<b>${g.name}</b>`:'수비대'}
 
 /* ================= 새 게임 ================= */
-function newGame(){
+function newGame(diff){
+  if(diff&&DIFFS[diff]){DIFF=diff;try{localStorage.setItem('chdiff',diff)}catch(e){}}
   facs=[];gens=[];armies=[];dips={};year=1;month=3;turn=1;events=[];selP=null;selA=null;over=false;logLines=[];uidA=1;usedNames.clear();
   genMap();
   const names=['청룡국','적염국','녹림국','황토국','자운국'];
@@ -244,6 +245,7 @@ function newGame(){
     makeArmy(f.id,cid,lead.id,{inf:1200,arc:600,cav:cp.terr==='plain'?500:200,mtn:cp.terr==='plain'?0:300});
   });
   for(let i=0;i<facs.length;i++)for(let j=i+1;j<facs.length;j++)dip(i,j).rel=RI(-15,15);
+  for(const f of facs)if(!f.isPlayer)f.gold+=DF().start;
   log(`<b>천하력 ${year}년.</b> 다섯 나라가 대륙의 패권을 두고 일어섰다. 그대는 ${fname(ME)}의 군주다.`);
   selP=facs[ME].cap;
   renderAll();
@@ -528,12 +530,6 @@ function armyAct(id,kind){
 }
 
 /* ================= AI ================= */
-function aiTurn(f){
-  if(!f.alive)return;
-  f.dipActed={};
-  aiCapital(f);aiDiplomacy(f);aiDomestic(f);aiForm(f);
-  for(const a of armies.filter(a=>a.fac===f.id)){if(!f.alive||over)return;if(armies.includes(a))aiArmy(f,a)}
-}
 function propose(from,to,type,extra){
   if(to.isPlayer){
     const txt={trade:`${fname(from.id)}이(가) <b>교역 협정</b>을 제안합니다. (양국 매달 금 수입 증가)`,
@@ -560,19 +556,48 @@ function aiAccept(ai,from,type){
   const d=dip(ai.id,from.id),r=d.rel,pa=facPower(ai.id),pf=facPower(from.id);
   if(type==='trade')return d.state!=='war'&&r>=5;
   if(type==='truce')return r>-35||pa<pf*0.8||Math.random()<.25;
-  if(type==='alliance')return d.state!=='war'&&(r>=45||(r>=20&&commonEnemy(ai.id,from.id)));
+  if(type==='alliance'){const L=leaderFac();const vsL=L&&L.id!==ai.id&&L.id!==from.id&&landShare(L.id)>0.25&&dip(ai.id,L.id).state==='war'&&dip(from.id,L.id).state==='war';return d.state!=='war'&&(r>=45||(r>=20&&commonEnemy(ai.id,from.id))||(vsL&&r>=-10))}
   if(type==='tribute')return pf>pa*2&&Math.random()<.6;
   return false;
 }
+const DIFFS={normal:{n:'보통',inc:1.0,agg:1.0,start:0},hard:{n:'어려움',inc:1.25,agg:1.4,start:300},hell:{n:'지옥',inc:1.5,agg:1.8,start:800}};
+let DIFF=(()=>{try{return localStorage.getItem('chdiff')||'hard'}catch(e){return 'hard'}})();if(!DIFFS[DIFF])DIFF='hard';
+const DF=()=>DIFFS[DIFF];
+const landShare=fid=>ownProvs(fid).length/provs.length;
+function leaderFac(){let b=null;for(const f of facs)if(f.alive&&(!b||ownProvs(f.id).length>ownProvs(b.id).length))b=f;return b}
+const atWar=fid=>facs.some(o=>o.alive&&o.id!==fid&&dip(fid,o.id).state==='war');
+function aiTurn(f){
+  if(!f.alive)return;
+  f.dipActed={};
+  aiCapital(f);aiDiplomacy(f);aiDomestic(f);aiForm(f);
+  const order=armies.filter(a=>a.fac===f.id).sort((a,b)=>sum(b.t)-sum(a.t));
+  for(const a of order){if(!f.alive||over)return;if(armies.includes(a))aiArmy(f,a)}
+}
+function aiPickTarget(f){
+  const cands=facs.filter(o=>o.alive&&o.id!==f.id&&!isAlly(f.id,o.id)&&sharesBorder(f.id,o.id));
+  if(!cands.length){f.target=null;f.targetTurn=turn;return}
+  const pf=facPower(f.id),L=leaderFac();let best=null,bv=-1e9;
+  for(const o of cands){const d=dip(f.id,o.id);
+    let v=pf/Math.max(1,facPower(o.id))-d.rel/40+(o===L&&landShare(o.id)>0.2?2:0)+(o.isPlayer?0.6*DF().agg:0)+(d.state==='war'?1:0)+Math.random()*.5;
+    if(d.state==='truce')v-=1.5;if(v>bv){bv=v;best=o}}
+  f.target=best.id;f.targetTurn=turn;
+}
 function aiDiplomacy(f){
+  if(f.target==null||!facs[f.target]||!facs[f.target].alive||turn-(f.targetTurn||0)>12||isAlly(f.id,f.target))aiPickTarget(f);
+  const agg=f.aggr*DF().agg,pf=facPower(f.id),L=leaderFac();
+  if(L&&L.id!==f.id&&landShare(L.id)>0.25)addRel(f.id,L.id,-1);
+  if(f.target!=null&&turn>=4){const o=facs[f.target],d=dip(f.id,o.id);
+    if(d.state==='neutral'&&pf>facPower(o.id)*0.65&&Math.random()<0.22*agg)declareWar(f.id,o.id)}
   for(const o of facs){if(!o.alive||o.id===f.id)continue;
-    const d=dip(f.id,o.id),pf=facPower(f.id),po=facPower(o.id),bd=sharesBorder(f.id,o.id);
+    const d=dip(f.id,o.id),po=facPower(o.id),bd=sharesBorder(f.id,o.id);
     if(d.state==='neutral'){
-      if(bd&&d.rel<-25+f.aggr*20&&pf>po*0.9&&Math.random()<0.12*f.aggr){declareWar(f.id,o.id);continue}
-      if(d.rel>45&&Math.random()<.08)propose(f,o,'alliance');
+      if(o.id!==f.target&&bd&&d.rel<-30+f.aggr*20&&pf>po*1.2&&Math.random()<0.06*agg){declareWar(f.id,o.id);continue}
+      if(L&&L.id!==f.id&&L.id!==o.id&&landShare(L.id)>0.25&&dip(o.id,L.id).state==='war'&&d.rel>-10&&Math.random()<.15)propose(f,o,'alliance');
+      else if(d.rel>45&&Math.random()<.08)propose(f,o,'alliance');
       else if(!d.trade&&d.rel>10&&Math.random()<.08)propose(f,o,'trade');
     }else if(d.state==='war'){
-      if((pf<po*0.7||d.rel>-10)&&Math.random()<.15)propose(f,o,'truce',pf<po*0.5?Math.min(200,Math.floor(f.gold/3)):0);
+      const losing=pf<po*0.6;
+      if((losing||(o.id!==f.target&&d.rel>-10))&&Math.random()<(o.id===f.target?.05:.15))propose(f,o,'truce',losing&&pf<po*0.4?Math.min(200,Math.floor(f.gold/3)):0);
     }else if(d.state==='alliance'){if(!d.trade&&Math.random()<.1)propose(f,o,'trade')}
     if(o.isPlayer&&d.state!=='war'&&Math.random()<.05)propose(f,o,'deal');
   }
@@ -580,51 +605,61 @@ function aiDiplomacy(f){
 function isFrontier(p){return p.nb.some(i=>provs[i].owner!==p.owner&&!isAlly(p.owner,provs[i].owner))}
 function aiPickType(p){if(Math.random()<.1)return 'sie';if(p.terr==='plain')return Math.random()<.4?'cav':Math.random()<.6?'inf':'arc';return Math.random()<.45?'mtn':Math.random()<.5?'inf':'arc'}
 function aiDomestic(f){
+  const war=atWar(f.id),reserve=war?100:220,limit=war?2600:1600;
   for(const p of shuffle(ownProvs(f.id))){
     if(p.acted)continue;const front=isFrontier(p);
-    if(p.order<40&&f.food>400){provAction(f.id,p,'relief');continue}
-    if(f.gold<160)break;
-    if(front&&sum(p.gar)<1400&&p.order>=30&&f.gold>280){provAction(f.id,p,'recruit',aiPickType(p));continue}
-    if(front&&p.wall<45&&Math.random()<.3){provAction(f.id,p,'wall');continue}
-    if(front&&!p.ambush&&Math.random()<.12){provAction(f.id,p,'ambush');continue}
-    if(Math.random()<.55)provAction(f.id,p,Math.random()<.5?'agri':'comm');
+    if(p.order<40&&f.food>300){provAction(f.id,p,'relief');continue}
+    if(f.gold<reserve+120)break;
+    if((front||p.id===f.cap)&&sum(p.gar)<limit&&p.order>=30&&Math.random()<(war?.85:.5)){provAction(f.id,p,'recruit',aiPickType(p));continue}
+    if(front&&p.wall<45&&Math.random()<.25){provAction(f.id,p,'wall');continue}
+    if(front&&!p.ambush&&Math.random()<.1){provAction(f.id,p,'ambush');continue}
+    if(Math.random()<.6)provAction(f.id,p,p.spec==='granary'?'agri':p.spec==='market'?'comm':(p.agri<p.comm?'agri':'comm'));
   }
 }
 function aiForm(f){
+  const nArm=armies.filter(a=>a.fac===f.id).length,np=ownProvs(f.id).length;
+  if(!idleGens(f.id).length&&nArm<Math.ceil(np/2)+1&&f.gold>650){f.gold-=300;const g=makeGen(f.id,RI(-5,5));g.loy=RI(60,85)}
   for(const g of idleGens(f.id)){
-    const cand=ownProvs(f.id).filter(p=>sum(p.gar)>=1500&&armiesIn(p.id,f.id).length<3).sort((a,b)=>(isFrontier(b)-isFrontier(a))||(sum(b.gar)-sum(a.gar)));
-    if(!cand.length)break;const p=cand[0];const t=T0();for(const k of TYPES){const keep=k==='inf'?400:0;t[k]=Math.max(0,p.gar[k]-keep);p.gar[k]-=t[k]}
+    const cand=ownProvs(f.id).filter(p=>sum(p.gar)>=1000&&armiesIn(p.id,f.id).length<3).sort((a,b)=>(isFrontier(b)-isFrontier(a))||(sum(b.gar)-sum(a.gar)));
+    if(!cand.length)break;const p=cand[0];const t=T0();for(const k of TYPES){const keep=k==='inf'?(p.id===f.cap?500:300):0;t[k]=Math.max(0,p.gar[k]-keep);p.gar[k]-=t[k]}
+    if(sum(t)<500){for(const k of TYPES)p.gar[k]+=t[k];continue}
     makeArmy(f.id,p.id,g.id,t);
   }
 }
 function aiArmy(f,a){
-  if(a.acted)return;const p=provs[a.prov],conn=connected(f.id);
+  if(a.acted)return;const p=provs[a.prov],conn=connected(f.id),agg=f.aggr*DF().agg;
   if(!supplied(a,conn)&&a.sup<=1){const r=sendSupply(a);if(r.ok)return}
   let best=null;
   for(const id of p.nb){const q=provs[id];if(q.owner===f.id||isAlly(f.id,q.owner))continue;
+    let thr=1.25;
     if(q.owner>=0){const d=dip(f.id,q.owner);
-      if(d.state==='truce'&&!(Math.random()<0.03*f.aggr))continue;
-      if(d.state==='neutral'&&!(d.rel<-20&&Math.random()<0.25*f.aggr))continue;
-      if(d.state==='neutral'&&facs[q.owner].isPlayer&&turn<6)continue;}
+      if(d.state==='truce'&&!(Math.random()<0.03*agg))continue;
+      if(d.state==='neutral'){const ok=(q.owner===f.target&&turn>=4&&Math.random()<.35*agg)||(d.rel<-20&&Math.random()<0.2*agg);if(!ok)continue;}
+      if(d.state==='war')thr=q.owner===f.target?1.05:1.15;
+    }else thr=1.15;
     const dl=q.owner>=0?armiesIn(q.id,q.owner):[];let A=makeSide([a],q,false),D=makeSide(dl,q,true);
     let ratio=eff(A,D.t)/Math.max(1,eff(D,A.t)),hs=[];
-    if(ratio<=1.3){const h=helpersFor(a,q);if(h.length){A=makeSide([a,...h],q,false);D=makeSide(dl,q,true);const r2=eff(A,D.t)/Math.max(1,eff(D,A.t));if(r2>1.3){ratio=r2;hs=h}}}
-    const v=ratio+(q.owner===-1?.15:0)+(q.owner>=0&&facs[q.owner].cap===q.id?.3:0)-hs.length*.1;
-    if(ratio>1.3&&(!best||v>best.v))best={q,v,hs};
+    if(ratio<=thr){const h=helpersFor(a,q);if(h.length){A=makeSide([a,...h],q,false);D=makeSide(dl,q,true);const r2=eff(A,D.t)/Math.max(1,eff(D,A.t));if(r2>thr){ratio=r2;hs=h}}}
+    const v=ratio+(q.owner===-1?.1:0)+(q.owner>=0&&q.owner===f.target?.5:0)+(q.spec?.35:0)+(q.owner>=0&&facs[q.owner].cap===q.id?.4:0)-hs.length*.1;
+    if(ratio>thr&&(!best||v>best.v))best={q,v,hs};
   }
   if(best){const g=gens[a.gen];const sur=g.int>62&&Math.random()<.55;
     if(best.q.owner===ME){a.acted=true;best.hs.forEach(x=>x.acted=true);events.push({battle:{aid:a.id,pid:best.q.id,sur,ex:best.hs.map(x=>x.id)}});return}
-    if(surrenderChance(a,best.q,best.hs)>.3&&Math.random()<.5){doSurrender(a,best.q,best.hs);return}
+    if(surrenderChance(a,best.q,best.hs)>.35&&Math.random()<.5){doSurrender(a,best.q,best.hs);return}
     doAttack(a,best.q,sur,best.hs);return}
-  if(p.owner===f.id&&sum(p.gar)>800&&sum(a.t)<4500){const t=T0();for(const k of TYPES){const keep=k==='inf'?300:0;t[k]=Math.max(0,p.gar[k]-keep);p.gar[k]-=t[k]}for(const k of TYPES)a.t[k]+=t[k];a.acted=true;return}
+  if(p.owner===f.id&&sum(p.gar)>700&&sum(a.t)<6000){const t=T0();for(const k of TYPES){const keep=k==='inf'?(p.id===f.cap?500:300):0;t[k]=Math.max(0,p.gar[k]-keep);p.gar[k]-=t[k]}if(sum(t)>0){for(const k of TYPES)a.t[k]+=t[k];a.acted=true;return}}
   if(a.mor<55&&p.owner===f.id){a.mor=clamp(a.mor+25,0,100);a.acted=true;return}
-  if(a.train<60&&p.owner===f.id&&f.gold>120&&Math.random()<.6){f.gold-=60;a.train+=12;a.skill[p.terr]=clamp(a.skill[p.terr]+20,0,100);a.acted=true;return}
-  // 전선으로 이동
-  const tgtIds=provs.filter(q=>q.owner!==f.id&&!isAlly(f.id,q.owner)&&(q.owner<0||dip(f.id,q.owner).state==='war'||dip(f.id,q.owner).state==='neutral')).map(q=>q.id);
+  const enemyNear=p.nb.some(i=>provs[i].owner!==f.id&&!isAlly(f.id,provs[i].owner));
+  if(a.train<45&&!enemyNear&&p.owner===f.id&&f.gold>120){f.gold-=60;a.train+=12;a.skill[p.terr]=clamp(a.skill[p.terr]+20,0,100);a.acted=true;return}
+  // 목표국 전선으로 집결
+  const ok=q=>q.owner!==f.id&&!isAlly(f.id,q.owner)&&(q.owner<0||dip(f.id,q.owner).state!=='truce');
+  let tgtIds=f.target!=null&&facs[f.target]&&facs[f.target].alive?ownProvs(f.target).map(q=>q.id):[];
+  if(!tgtIds.length)tgtIds=provs.filter(ok).map(q=>q.id);
   if(!tgtIds.length)return;
   const df=bfs(tgtIds);const mv=[...moveTargets(a)];let bm=null,bv=df[a.prov];
   for(const id of mv){const v=df[id]+Math.random()*.5;if(v<bv-0.3){bv=v;bm=id}}
   if(bm!=null){a.prov=bm;a.acted=true}
+  else if(a.train<70&&p.owner===f.id&&f.gold>200){f.gold-=60;a.train+=12;a.skill[p.terr]=clamp(a.skill[p.terr]+20,0,100);a.acted=true}
 }
 
 /* ================= 투항 권유 ================= */
@@ -753,12 +788,11 @@ function scoutLegend(gid){
   else{f.gold-=100;toast(`${g.name}: "아직 때가 아닌 듯합니다…" (예물 금 100)`);log(`🌟 ${gname(g)}이(가) 우리의 스카우트 제안을 정중히 거절했다.`);renderAll()}
 }
 function aiCapital(f){
-  if(!f.capTemp&&CAPLV[(f.capLv||1)+1]&&f.gold>CAPLV[(f.capLv||1)+1].cost+500&&Math.random()<.15){upgradeCapital(f.id);return}
-  if(f.capTemp&&f.gold>=CAP_REBUILD+150){const own=ownProvs(f.id);const best=own.sort((a,b)=>(!!b.spec-!!a.spec)||(sum(b.gar)-sum(a.gar)))[0];if(best)setCapital(f.id,best.id);return}
-  if(!f.capTemp&&f.gold>CAP_COST+900&&!provs[f.cap].spec&&Math.random()<.05){const sp=ownProvs(f.id).find(p=>p.spec&&!isFrontier(p));if(sp)setCapital(f.id,sp.id)}
+  if(f.capTemp){if(f.gold>=CAP_REBUILD+100){const best=ownProvs(f.id).sort((a,b)=>(!!b.spec-!!a.spec)||(isFrontier(a)-isFrontier(b))||(sum(b.gar)-sum(a.gar)))[0];if(best)setCapital(f.id,best.id)}return}
+  const cur=provs[f.cap];
+  if(!cur.spec&&f.gold>=CAP_COST+250){const sp=ownProvs(f.id).filter(p=>p.spec).sort((a,b)=>(isFrontier(a)-isFrontier(b))||(b.wall-a.wall))[0];if(sp&&Math.random()<.5){setCapital(f.id,sp.id);return}}
+  const nx=CAPLV[(f.capLv||1)+1];if(nx&&f.gold>nx.cost+300&&Math.random()<.3)upgradeCapital(f.id);
 }
-
-/* ================= 턴 진행 ================= */
 function endTurn(){
   if(over||document.getElementById('modal').classList.contains('on'))return;
   selA=null;
@@ -783,6 +817,7 @@ function upkeep(){
     const own=ownProvs(f.id);let g=0,fd=0;
     for(const p of own){g+=p.comm*(0.6+p.order/250)*1.3;fd+=p.agri*sm}
     if(facHasTrait(f.id,'명재상'))g*=1.2;
+    if(!f.isPlayer){g*=DF().inc;fd*=DF().inc}
     for(const o of facs)if(o.alive&&o.id!==f.id&&dip(f.id,o.id).trade)g+=25+ownProvs(o.id).length*3;
     const arms=armies.filter(a=>a.fac===f.id);let ta=0,tg=0;arms.forEach(a=>ta+=sum(a.t));own.forEach(p=>tg+=sum(p.gar));tg+=f.guard||0;
     g-=(ta+tg)/100*0.8;fd-=ta/100*1.5+tg/200;
@@ -915,7 +950,7 @@ function releaseGen(g){g.captor=null;if(g.fac>=0&&facs[g.fac].alive)g.status='ac
 function renderAll(){renderTop();renderMap();renderPanel();renderLog()}
 function renderTop(){
   const f=facs[ME];
-  document.getElementById('cDate').textContent=`천하력 ${year}년 ${month}월 · ${season(month)}`;
+  document.getElementById('cDate').textContent=`천하력 ${year}년 ${month}월 · ${season(month)} · 난이도 ${DF().n}`;
   document.getElementById('cGold').textContent=f.gold;
   document.getElementById('cFood').textContent=f.food;
   document.getElementById('cTroops').textContent=fmt(facTroops(ME));
@@ -1036,8 +1071,10 @@ function showModal(h){document.getElementById('mbox').classList.remove('wide');d
 function closeModal(){document.getElementById('modal').classList.remove('on')}
 function toast(m){const d=document.createElement('div');d.textContent=m;d.style.cssText='position:fixed;left:50%;top:70px;transform:translateX(-50%);background:#000d;padding:10px 16px;border-radius:10px;z-index:20;font-weight:700;border:1px solid #556';document.body.appendChild(d);setTimeout(()=>d.remove(),2200)}
 function askNew(){
-  showModal(`<h2>🔄 새 게임</h2><p>지금 진행 중인 천하는 사라집니다. 정말 새 게임을 시작할까요?</p>
-   <div class="btns"><button onclick="closeModal()">취소</button><button class="red" onclick="closeModal();newGame()">새 게임 시작</button></div>`);
+  showModal(`<h2>🔄 새 게임</h2><p>지금 진행 중인 천하는 사라집니다. 난이도를 고르면 새 게임이 시작됩니다.</p>
+   <div style="display:grid;gap:8px">${Object.entries(DIFFS).map(([k,d])=>`<button class="${k==='normal'?'':k==='hard'?'org':'red'}" style="text-align:left;padding:10px 14px" onclick="closeModal();newGame('${k}')">
+     <b>${d.n}</b>${k===DIFF?' (현재)':''}<br><span style="font-weight:400;font-size:12px">AI 수입 ×${d.inc} · 호전성 ×${d.agg}${d.start?` · AI 시작 금 +${d.start}`:''}</span></button>`).join('')}</div>
+   <div class="btns"><button onclick="closeModal()">취소</button></div>`);
 }
 let ATK_JOIN=[];
 const joinList=()=>ATK_JOIN.map(id=>armies.find(x=>x.id===id)).filter(Boolean);
@@ -1149,9 +1186,9 @@ function openGens(){
    ${list.map(g=>{const a=g.army!=null?armies.find(x=>x.id===g.army):null;return `<tr><td><b>${g.name}</b></td><td title="${g.trait?TRAITS[g.trait]:''}">${g.trait?'✨'+g.trait+'<br><span class="mut" style="font-size:11px">'+TRAITS[g.trait]+'</span>':'-'}</td><td>${g.war}</td><td>${g.int}</td><td>${g.pol}</td>
     <td style="color:${g.loy<35?'#ff7a7a':g.loy<60?'#ffd27a':'#9be37b'};font-weight:700">${g.loy}${g.grace&&turn<g.grace?`<br><span style="font-size:11px;color:#9cc8ff">🔒 ${g.grace-turn}턴 보호</span>`:''}</td><td>${g.amb>70?'🔥높음':g.amb>40?'보통':'낮음'}</td>
     <td>${a?provs[a.prov].name+' 군단':'<span class="mut">대기</span>'}</td><td><button class="sm org" ${g.rewarded||facs[ME].gold<100?'disabled':''} onclick="reward(${g.id})">포상 <span class="g">100</span></button></td></tr>`}).join('')}</table>
-   ${gens.some(g=>g.status==='captured'&&g.captor===ME)?'':''}
-   <div class="btns"><button onclick="closeModal()">닫기</button></div>`);
+   <div class="btns"><button class="grn" ${facs[ME].hired===turn||facs[ME].gold<300?'disabled':''} onclick="hireGen()">🧑 장수 모집 <span class="g">300</span> <span style="font-weight:400;font-size:11px">(턴당 1회, 평범한 장수)</span></button><button onclick="closeModal()">닫기</button></div>`);
 }
+function hireGen(){const f=facs[ME];if(f.gold<300||f.hired===turn)return;f.gold-=300;f.hired=turn;const g=makeGen(ME,RI(-8,3));g.loy=RI(60,80);log(`🧑 ${gname(g)}을(를) 장수로 모집했다.`);toast(`${g.name}(무${g.war}·지${g.int}${g.trait?' · '+g.trait:''}) 모집!`);renderTop();openGens()}
 function reward(id){const g=gens[id];if(facs[ME].gold<100)return;facs[ME].gold-=100;g.loy=clamp(g.loy+RI(8,14),0,100);g.rewarded=true;renderTop();openGens()}
 
 function openDiplo(){
