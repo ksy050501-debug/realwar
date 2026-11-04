@@ -456,7 +456,7 @@ function provAction(fid,p,kind,type){
 }
 
 /* ================= 플레이어 입력 ================= */
-function moveTargets(a){
+function moveTargets(a){if(a.moved)return new Set();
   const p=provs[a.prov];const res=new Set();
   const ok=q=>q.owner===a.fac||isAlly(a.fac,q.owner);
   const d=bfs(a.prov,ok);
@@ -466,25 +466,33 @@ function moveTargets(a){
 function attackTargets(a){
   const res=new Set();for(const i of provs[a.prov].nb){const q=provs[i];if(q.owner===a.fac||isAlly(a.fac,q.owner))continue;res.add(i)}return res;
 }
+let pendingMove=null;
+function confirmMove(){const a=armies.find(x=>x.id===selA);if(a&&pendingMove!=null)clickProv(pendingMove)}
+function cancelMove(){pendingMove=null;renderAll()}
+function undoMove(id){const a=armies.find(x=>x.id===id);if(!a||!a.moved||a.acted)return;a.prov=a.from;a.moved=false;a.from=null;selA=a.id;selP=a.prov;pendingMove=null;renderAll()}
 function clickProv(id){
   if(over)return;
   const a=selA!=null?armies.find(x=>x.id===selA):null;
   if(a&&a.fac===ME&&!a.acted){
-    if(moveTargets(a).has(id)){a.prov=id;a.acted=true;selP=id;selA=null;renderAll();return}
-    if(attackTargets(a).has(id)){openAttack(a,provs[id]);return}
+    if(moveTargets(a).has(id)){
+      if(pendingMove===id){a.from=a.prov;a.prov=id;a.moved=true;pendingMove=null;selP=id;renderAll();toast(`${provs[id].name}(으)로 이동했습니다. 이제 이웃한 적을 공격할 수 있어요.`);return}
+      pendingMove=id;selP=a.prov;renderAll();return}
+    if(attackTargets(a).has(id)){pendingMove=null;openAttack(a,provs[id]);return}
   }
-  selP=id;selA=null;
+  pendingMove=null;selP=id;selA=null;
   const mine=armiesIn(id,ME).filter(x=>!x.acted);
   if(mine.length===1)selA=mine[0].id;
   renderAll();
 }
 function nextArmy(){const r=armies.filter(x=>x.fac===ME&&!x.acted);if(!r.length)return;const i=r.findIndex(x=>x.id===selA);const a=r[(i+1)%r.length];selA=a.id;selP=a.prov;renderAll()}
-function selectArmy(id){selA=id;const a=armies.find(x=>x.id===id);if(a)selP=a.prov;renderAll()}
+function selectArmy(id){selA=id;pendingMove=null;const a=armies.find(x=>x.id===id);if(a)selP=a.prov;renderAll()}
 function doProv(kind,type){const p=provs[selP];const err=provAction(ME,p,kind,type);if(err)toast(err);else{const lbl={agri:'농업 개발',comm:'상업 개발',wall:'성벽 보수',relief:'구휼',recruit:'징병',ambush:'매복 설치'}[kind];log(`🏛️ ${p.name}: ${lbl}${type?' ('+UT[type].n+' 500)':''}`)}renderAll()}
 function armyAct(id,kind){
   const a=armies.find(x=>x.id===id);if(!a||a.acted)return;const f=facs[ME],p=provs[a.prov];
+  if((kind==='train'||kind==='rest')&&a.moved)return toast('이동한 턴에는 훈련·휴식을 할 수 없습니다.');
   if(kind==='train'){if(p.owner!==ME)return toast('내 영토에서만 훈련할 수 있습니다.');if(f.gold<60)return toast('금이 부족합니다.');f.gold-=60;a.train=clamp(a.train+12,0,100);a.skill[p.terr]=clamp(a.skill[p.terr]+20,0,100);a.acted=true;log(`🎯 ${gname(gens[a.gen])} 군단이 ${p.name}에서 ${TERR[p.terr].n} 훈련 (훈련도 ${a.train}, ${TERR[p.terr].n} 숙련 ${a.skill[p.terr]})`)}
   else if(kind==='rest'){a.mor=clamp(a.mor+25,0,100);a.acted=true}
+  else if(kind==='wait'){a.acted=true;selA=null}
   else if(kind==='absorb'){if(p.owner!==ME)return;const take=T0();for(const k of TYPES){const keep=k==='inf'?300:0;const n=Math.max(0,p.gar[k]-keep);take[k]=n;p.gar[k]-=n}
     if(sum(take)===0)return toast('합류할 수비병이 없습니다.');const n0=sum(a.t),n1=sum(take);a.train=Math.round((a.train*n0+30*n1)/(n0+n1));for(const k of TYPES)a.t[k]+=take[k];a.acted=true;log(`➕ ${gname(gens[a.gen])} 군단에 수비병 ${fmt(n1)} 합류`)}
   else if(kind==='supply'){const r=sendSupply(a);toast(r.msg);if(r.ok)log(`🚚 ${gname(gens[a.gen])} 군단 보급: ${r.msg}`)}
@@ -600,7 +608,7 @@ function endTurn(){
   if(over)return;
   month++;if(month>12){month=1;year++}turn++;
   for(const p of provs)p.acted=false;
-  for(const a of armies)a.acted=false;
+  for(const a of armies){a.acted=false;a.moved=false;a.from=null}pendingMove=null;
   for(const g of gens)g.rewarded=false;
   facs[ME].dipActed={};
   checkVictory();
@@ -780,6 +788,7 @@ function renderMap(){
       s+=`<g pointer-events="none" opacity="${done?.6:1}"><rect x="${fx}" y="${fy}" width="34" height="17" rx="4" fill="${facs[k].color}" stroke="${hasSel?'#ffe066':'#fff'}" stroke-width="${hasSel?2.5:1.6}">${+k===ME&&list.some(x=>!x.acted)&&!hasSel?'<animate attributeName="stroke-opacity" values="1;.15;1" dur="1.1s" repeatCount="indefinite"/>':''}</rect>
         <text x="${fx+17}" y="${fy+12.5}" font-size="10.5" font-weight="900" text-anchor="middle" fill="#fff">${list.length>1?list.length+'·':''}${fmt(n)}</text></g>`});
     if(!keys.length&&sum(p.gar)>0)s+=`<text x="${x}" y="${y+14}" font-size="9.5" text-anchor="middle" fill="#fff" opacity=".8" stroke="#000" stroke-width="2" paint-order="stroke" pointer-events="none">🛡${fmt(sum(p.gar))}</text>`;
+    if(p.id===pendingMove)s+=`<polygon points="${hexPts(x,y,HS-2)}" fill="#ffe066" fill-opacity=".45" stroke="#fff" stroke-width="3" stroke-dasharray="6 4" pointer-events="none"/><text x="${x}" y="${y+30}" font-size="11" font-weight="900" text-anchor="middle" fill="#fff" stroke="#000" stroke-width="3" paint-order="stroke" pointer-events="none">👆 이동?</text>`;
     if(p.id===selP)s+=`<polygon points="${hexPts(x,y,HS-1.5)}" fill="none" stroke="#ffe066" stroke-width="3" pointer-events="none"/>`;
     s+='</g>';
   }
@@ -790,7 +799,7 @@ function renderMap(){
     s+=`<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="#10131a" stroke-width="2.6" stroke-linecap="round" pointer-events="none"/>`}
   svg.innerHTML=s;
   const ready=armies.filter(x=>x.fac===ME&&!x.acted).length;
-  document.getElementById('hint').textContent=a&&a.fac===ME&&!a.acted?`${gens[a.gen].name} 군단 선택됨 — 초록 칸: 이동 · 빨간 칸: 공격`:ready?`깜빡이는 깃발 = 행동 가능한 군단 ${ready}개. 눌러서 선택하세요`:'모든 군단이 행동했어요. 내정을 마치고 [턴 종료]';
+  document.getElementById('hint').textContent=a&&pendingMove!=null?`${provs[pendingMove].name}(으)로 이동하려면 그 칸을 한 번 더 누르세요 (다른 곳 클릭 = 취소)`:a&&a.fac===ME&&!a.acted?(a.moved?`${gens[a.gen].name} 군단 이동 완료 — 빨간 칸을 눌러 공격하거나 [대기]`:`${gens[a.gen].name} 군단 선택됨 — 초록 칸: 이동(2번 클릭) · 빨간 칸: 공격`):ready?`깜빡이는 깃발 = 행동 가능한 군단 ${ready}개. 눌러서 선택하세요`:'모든 군단이 행동했어요. 내정을 마치고 [턴 종료]';
 }
 svgClick();
 function svgClick(){document.getElementById('map').addEventListener('click',e=>{const g=e.target.closest('.hex');if(g)clickProv(+g.dataset.id)})}
@@ -833,7 +842,10 @@ function renderPanel(){
           <button class="sm" onclick="armyAct(${a.id},'rest')">😴 휴식(사기)</button>
           <button class="sm" onclick="armyAct(${a.id},'absorb')" ${p.owner===ME&&sum(p.gar)>300?'':'disabled'}>➕ 수비병 합류</button>
           <button class="sm" onclick="armyAct(${a.id},'supply')" ${sup?'disabled':''}>🚚 보급대 <span class="f">${supplyCost(a)}</span></button>
-          <button class="sm" onclick="armyAct(${a.id},'disband')" ${p.owner===ME?'':'disabled'}>🏳️ 해산</button></div>`:''}</div>`}}
+          <button class="sm" onclick="armyAct(${a.id},'disband')" ${p.owner===ME&&!a.moved?'':'disabled'}>🏳️ 해산</button>
+          <button class="sm" onclick="armyAct(${a.id},'wait')">✋ 대기(행동 끝)</button></div>
+          ${a.moved?`<div class="grid2"><button class="sm org" onclick="undoMove(${a.id})">↩️ 이동 취소 (${provs[a.from].name}로)</button><span class="mut" style="font-size:12px;align-self:center">이동 후에도 공격할 수 있어요</span></div>`:''}
+          ${a.id===selA&&pendingMove!=null?`<div class="grid2"><button class="sm grn" onclick="confirmMove()">✔ ${provs[pendingMove].name}(으)로 이동</button><button class="sm" onclick="cancelMove()">✖ 이동 취소</button></div>`:''}`:''}</div>`}}
   el.innerHTML=h;
 }
 function renderLog(){document.getElementById('log').innerHTML=logLines.slice(-60).reverse().map(l=>`<div>${l}</div>`).join('')}
@@ -1013,7 +1025,7 @@ function openHelp(first){
   <h3 style="margin:10px 0 4px">🕹️ 한 턴에 할 일 (딱 3가지)</h3>
   <ol>
    <li><b>내정</b> — 내 땅을 누르고 개발·징병·매복 중 하나 (땅마다 1번)</li>
-   <li><b>군단</b> — 깜빡이는 깃발을 눌러 <span style="color:#7dff9a">초록 칸</span>으로 이동하거나 <span style="color:#ff8a8a">빨간 칸</span>을 공격 (군단마다 1번). 적 땅을 눌러도 공격 버튼이 나와요.</li>
+   <li><b>군단</b> — 깜빡이는 깃발을 누르고 <span style="color:#7dff9a">초록 칸</span>을 <b>두 번</b> 눌러 이동(실수 방지). 이동한 뒤에도 <span style="color:#ff8a8a">빨간 칸</span>을 공격할 수 있고, 공격 전이라면 ↩️이동 취소도 가능해요. 적 땅을 눌러도 공격 버튼이 나와요.</li>
    <li><b>턴 종료</b> — 군단은 다음 턴에 다시 움직일 수 있어요.</li>
   </ol>
   <h3 style="margin:10px 0 4px">⚔️ 전투 — 직접 지휘</h3>
