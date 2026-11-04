@@ -778,7 +778,7 @@ function doJoint(fid){
 /* ================= 저장 · 불러오기 ================= */
 let CLOUD=null,FB=null,SAVING=false,needSave=false,lastSaveTxt='';
 /* Firebase 설정: Firebase 콘솔 > 프로젝트 설정 > 내 앱(웹)의 firebaseConfig 를 그대로 붙여 넣으세요. null 이면 사용 안 함 */
-const FIREBASE_CONFIG=null;
+const FIREBASE_CONFIG={apiKey:"AIzaSyAybcaDKRLtajscN3HLe6LIb-z1ar3oZJw",authDomain:"realwar-a5269.firebaseapp.com",projectId:"realwar-a5269",storageBucket:"realwar-a5269.firebasestorage.app",messagingSenderId:"302824807396",appId:"1:302824807396:web:47dcd55cf14a65e92d45f1"};
 const FB_COL='realwar_saves';
 (async()=>{try{if(window.claude&&claude.use)CLOUD=await claude.use('db')}catch(e){CLOUD=null}renderSaveChip()})();
 (async()=>{if(!FIREBASE_CONFIG)return;try{const V='10.12.2';
