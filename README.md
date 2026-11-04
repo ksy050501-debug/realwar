@@ -17,3 +17,11 @@
 ## 파일
 - `index.html` — 게임 본체 (단일 파일)
 - `prototypes/tactics.html` — 초기 칸 단위 전술전 프로토타입
+
+## 🔥 Firebase 저장 설정 (어느 브라우저에서든 이어하기)
+1. [Firebase 콘솔](https://console.firebase.google.com)에서 새 프로젝트를 만들고, **Firestore Database**를 생성합니다.
+2. 프로젝트 설정 → 내 앱 → 웹 앱 추가 → 나오는 `firebaseConfig` 객체를 `index.html`의 `const FIREBASE_CONFIG=null;` 자리에 붙여 넣습니다.
+3. Firestore → 규칙 탭에 `firestore.rules` 내용을 붙여 넣고 게시합니다.
+4. GitHub 저장소 Settings → Pages → Branch `main` / `/(root)` 저장 → `https://ksy050501-debug.github.io/realwar/` 에서 플레이.
+
+※ claude.ai 아티팩트 페이지는 외부 서버 접속이 막혀 있어 Firebase 대신 claude.ai 클라우드 저장을 씁니다.

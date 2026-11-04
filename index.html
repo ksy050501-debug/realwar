@@ -776,8 +776,17 @@ function doJoint(fid){
 }
 
 /* ================= 저장 · 불러오기 ================= */
-let CLOUD=null,SAVING=false,needSave=false,lastSaveTxt='';
+let CLOUD=null,FB=null,SAVING=false,needSave=false,lastSaveTxt='';
+/* Firebase 설정: Firebase 콘솔 > 프로젝트 설정 > 내 앱(웹)의 firebaseConfig 를 그대로 붙여 넣으세요. null 이면 사용 안 함 */
+const FIREBASE_CONFIG=null;
+const FB_COL='realwar_saves';
 (async()=>{try{if(window.claude&&claude.use)CLOUD=await claude.use('db')}catch(e){CLOUD=null}renderSaveChip()})();
+(async()=>{if(!FIREBASE_CONFIG)return;try{const V='10.12.2';
+  const app=await import(`https://www.gstatic.com/firebasejs/${V}/firebase-app.js`),fs=await import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`);
+  const db=fs.getFirestore(app.initializeApp(FIREBASE_CONFIG));
+  FB={get:async id=>{const s=await fs.getDoc(fs.doc(db,FB_COL,id));return s.exists()?s.data():null},set:(id,v)=>fs.setDoc(fs.doc(db,FB_COL,id),v)};
+  renderSaveChip()}catch(e){FB=null;console.warn('Firebase 사용 불가',e)}})();
+const cloudName=()=>FB?'🔥Firebase':CLOUD?'☁️클라우드':'';
 const LS={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v);return true}catch(e){return false}},del:k=>{try{localStorage.removeItem(k)}catch(e){}}};
 function serialize(){return JSON.stringify({v:1,provs,seaCells,facs,gens,armies,dips,year,month,turn,uidA,over,DIFF,logLines:logLines.slice(-60),used:[...usedNames]})}
 function deserialize(str){
@@ -801,13 +810,15 @@ async function saveSlot(name,pw){
   const id=await hashKey(name,pw),data=await pack(serialize()),meta={name:name.trim(),...saveMeta()};
   const local=LS.set('chsave_'+id,data)&&LS.set('chmeta_'+id,JSON.stringify(meta));
   let cloud=false;
+  if(FB){if(data.length>900000)throw new Error('저장 데이터가 너무 큽니다');await FB.set(id,{...meta,d:data,v:1});return {local,cloud:true,via:'🔥Firebase'}}
   if(CLOUD){const parts=[];for(let i=0;i<data.length;i+=200000)parts.push(data.slice(i,i+200000));
     for(let i=0;i<parts.length;i++)await CLOUD.doc(`saves/${id}/parts/p${i}`).set({d:parts[i]});
     await CLOUD.doc('saves/'+id).set({...meta,n:parts.length});cloud=true}
-  return {local,cloud};
+  return {local,cloud,via:cloud?'☁️클라우드':''};
 }
 async function loadSlot(name,pw){
   const id=await hashKey(name,pw);
+  if(FB){try{const d=await FB.get(id);if(d&&d.d)return {str:await unpack(d.d),meta:d,from:'firebase'}}catch(e){console.warn(e)}}
   if(CLOUD){try{const m=await CLOUD.doc('saves/'+id).get();if(m.exists){const md=m.data();let s='';
     for(let i=0;i<md.n;i++){const p=await CLOUD.doc(`saves/${id}/parts/p${i}`).get();if(!p.exists)throw new Error('part');s+=p.data().d}
     return {str:await unpack(s),meta:md,from:'cloud'}}}catch(e){}}
@@ -820,7 +831,7 @@ async function autoSave(){
   const ok=LS.set('chsave_auto',await pack(serialize()))&&LS.set('chmeta_auto',JSON.stringify(saveMeta()));
   lastSaveTxt=ok?`${year}.${month}✓`:'실패';
   const sl=slotInfo();
-  if(sl&&sl.name&&sl.pw&&!SAVING){SAVING=true;try{const r=await saveSlot(sl.name,sl.pw);lastSaveTxt=`${year}.${month}✓${r.cloud?'☁️':''}`}catch(e){lastSaveTxt=`☁️실패`}SAVING=false}
+  if(sl&&sl.name&&sl.pw&&!SAVING){SAVING=true;try{const r=await saveSlot(sl.name,sl.pw);lastSaveTxt=`${year}.${month}✓${r.cloud?(FB?'🔥':'☁️'):''}`}catch(e){lastSaveTxt=`☁️실패`}SAVING=false}
   renderSaveChip();
 }
 function renderSaveChip(){const el=document.getElementById('saveChip');if(el)el.textContent=lastSaveTxt?'💾 '+lastSaveTxt:'💾 저장'}
@@ -828,7 +839,7 @@ function fmtMeta(m){if(!m)return '';const d=m.at?new Date(m.at):null;return `천
 function openSave(){
   const sl=slotInfo()||{},am=JSON.parse(LS.get('chmeta_auto')||'null');
   showModal(`<h2>💾 저장 · 불러오기</h2>
-   <p class="mut" style="font-size:13px">${CLOUD?'☁️ <b>클라우드 저장 사용 가능</b> — 저장 이름과 비밀번호만 알면 다른 기기·다른 대화에서도 이 게임 페이지를 열어 이어할 수 있어요.':'💻 지금은 <b>이 브라우저에만</b> 저장돼요. (같은 기기·같은 브라우저에서 이어하기 가능)'}</p>
+   <p class="mut" style="font-size:13px">${FB?'🔥 <b>Firebase 저장 사용 가능</b> — 저장 이름과 비밀번호만 알면 <b>어느 기기·어느 브라우저</b>에서든 이 주소를 열어 이어할 수 있어요.':CLOUD?'☁️ <b>클라우드 저장 사용 가능</b> — 저장 이름과 비밀번호만 알면 다른 기기·다른 대화에서도 이 게임 페이지를 열어 이어할 수 있어요.':'💻 지금은 <b>이 브라우저에만</b> 저장돼요. (같은 기기·같은 브라우저에서 이어하기 가능)'}</p>
    <div class="army"><b>📝 이름 + 비밀번호로 저장</b>
     <div class="grid2"><input id="svN" placeholder="저장 이름 (예: 성윤천하)" value="${(sl.name||'').replace(/"/g,'')}" style="padding:7px;border-radius:6px;border:1px solid var(--line);background:#11151e;color:#fff">
     <input id="svP" type="password" placeholder="비밀번호" value="${sl.pw?'********':''}" style="padding:7px;border-radius:6px;border:1px solid var(--line);background:#11151e;color:#fff"></div>
@@ -847,8 +858,8 @@ async function doSave(){
   msg.textContent='저장 중…';
   try{const r=await saveSlot(n,pw);
     if(document.getElementById('svAuto').checked)LS.set('chslot',JSON.stringify({name:n,pw}));else LS.del('chslot');
-    lastSaveTxt=`${year}.${month}✓${r.cloud?'☁️':''}`;renderSaveChip();
-    msg.innerHTML=`<span style="color:#7dff9a">✔ 저장 완료! ${r.cloud?'☁️ 클라우드':''}${r.cloud&&r.local?' + ':''}${r.local?'💻 이 브라우저':''}</span><br><span class="mut">다음에 이 페이지를 열고 <b>${n}</b> + 비밀번호로 불러오세요.</span>`}
+    lastSaveTxt=`${year}.${month}✓${r.cloud?(FB?'🔥':'☁️'):''}`;renderSaveChip();
+    msg.innerHTML=`<span style="color:#7dff9a">✔ 저장 완료! ${r.cloud?r.via:''}${r.cloud&&r.local?' + ':''}${r.local?'💻 이 브라우저':''}</span><br><span class="mut">다음에 이 페이지를 열고 <b>${n}</b> + 비밀번호로 불러오세요.</span>`}
   catch(e){msg.innerHTML=`<span style="color:#ff8a8a">저장 실패: ${(e&&(e.code||e.message))||'오류'}${e&&e.code==='invalid_argument'?' (이 페이지에 쓰기 권한이 없을 수 있어요)':''}</span>`}
 }
 async function doLoad(){
