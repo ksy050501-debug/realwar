@@ -453,6 +453,7 @@ function declareWar(a,b,silent){const d=dip(a,b);if(d.state==='war')return;d.sta
   log(`🔥 ${fname(a)}이 ${fname(b)}에 선전포고!`);
   // 동맹 참전
   for(const f of facs)if(f.alive&&f.id!==a&&f.id!==b&&isAlly(f.id,b)&&dip(f.id,a).state!=='war'&&!f.isPlayer&&Math.random()<.6){dip(f.id,a).state='war';dip(f.id,a).trade=false;addRel(f.id,a,-25);log(`🛡️ ${fname(f.id)}이 동맹 ${fname(b)}을 돕기 위해 ${fname(a)}에 선전포고!`)}
+  expelForeign();
   if(b===ME&&!silent)events.push({title:'🔥 선전포고',html:`${fname(a)}이(가) 우리에게 전쟁을 선포했습니다!`,btns:[{l:'확인'}]});
 }
 function betray(a,b){addRel(a,b,-40);for(const f of facs)if(f.alive&&f.id!==a&&f.id!==b)addRel(f.id,a,-12);log(`🗡️ ${fname(a)}이 ${fname(b)}과의 맹약을 깨고 배신했다! 천하의 신망을 잃었다.`)}
@@ -630,10 +631,12 @@ function aiDomestic(f){
     if((front||p.id===f.cap)&&sum(p.gar)<limit&&p.order>=30&&Math.random()<(war?.85:.5)){provAction(f.id,p,'recruit',aiPickType(p));continue}
     if(front&&p.wall<45&&Math.random()<.25){provAction(f.id,p,'wall');continue}
     if(front&&!p.ambush&&Math.random()<.1){provAction(f.id,p,'ambush');continue}
+
     if(Math.random()<.6)provAction(f.id,p,p.spec==='granary'?'agri':p.spec==='market'?'comm':(p.agri<p.comm?'agri':'comm'));
   }
 }
 function aiForm(f){
+  pushToFront(f.id,ownProvs(f.id).filter(p=>sum(p.gar)>900),400);
   const nArm=armies.filter(a=>a.fac===f.id).length,np=ownProvs(f.id).length;
   if(!idleGens(f.id).length&&nArm<Math.ceil(np/2)+1&&f.gold>650){f.gold-=300;const g=makeGen(f.id,RI(-5,5));g.loy=RI(60,85)}
   for(const g of idleGens(f.id)){
@@ -715,6 +718,7 @@ function renderBulkPanel(){
     <button class="sm" onclick="bulkPick('none')">선택 해제</button><button class="sm pri" onclick="toggleBulk()">✔ 일괄 모드 끝내기</button></div>
    <h3 style="margin-top:10px">🏛️ 선택한 땅에 한꺼번에 <span class="mut">(개발 비용 ×${devMul(f).c} · 효과 ×${devMul(f).g})</span></h3>
    <div class="grid2">${btn('agri','🌾 농업')}${btn('comm','💰 상업')}${btn('wall','🧱 성벽')}${btn('relief','❤️ 구휼')}${btn('ambush','🪤 매복')}</div>
+   <h3 style="margin-top:10px">🚚 수비병 이동</h3><div class="grid2"><button onclick="bulkPush()" style="grid-column:span 2">🚚 선택한 후방 땅의 수비병을 전선 쪽으로 한 칸 <span class="mut" style="font-size:11px">(창병 300 남김)</span></button></div>
    <h3 style="margin-top:10px">⚔️ 한꺼번에 징병 (곳당 500명)</h3><div class="grid2">${TYPES.map(k=>btn('recruit',UT[k].icon+' '+UT[k].n,k)).join('')}</div>
    <div style="font-size:12.5px;margin-top:8px;max-height:150px;overflow:auto">${sel.map(p=>`<span class="tag" style="${p.acted?'opacity:.45':''}">${p.name} ${p.order<=30?'❗':''}${p.acted?'✔':''}</span>`).join('')}</div>`;
 }
@@ -762,7 +766,7 @@ function doJoint(fid){
   const ally=facs[fid],t=facs[+document.getElementById('jt').value],g=+document.getElementById('jg').value,me=facs[ME];
   if(g>me.gold)return toast('금이 부족합니다.');me.dipActed[fid]=true;
   if(Math.random()<jointChance(ally,t,g)){
-    me.gold-=g;ally.gold+=g;const d=dip(ME,t.id);if(d.state==='alliance'){d.state='neutral';addRel(ME,t.id,-30)}if(d.state==='truce')betray(ME,t.id);
+    me.gold-=g;ally.gold+=g;const d=dip(ME,t.id);if(d.state==='alliance'){d.state='neutral';addRel(ME,t.id,-30);expelForeign()}if(d.state==='truce')betray(ME,t.id);
     declareWar(ME,t.id,true);if(dip(fid,t.id).state!=='war')declareWar(fid,t.id,true);
     ally.target=t.id;ally.targetTurn=turn;addRel(ME,fid,10);
     log(`⚔️ <b>공동 전선!</b> ${fname(ME)}·${fname(fid)}이(가) 함께 ${fname(t.id)}을(를) 치기로 했다.${g?` (지원금 ${g})`:''}`);
@@ -908,6 +912,40 @@ function aiGovern(f){
   for(const g of idle){if(g.pol<60)break;if(ng>=Math.floor(np/3))break;if(nArm<2&&idleGens(f.id).length<=1)break;ng++;
     const p=ownProvs(f.id).filter(q=>q.id!==f.cap&&!validGov(q)).sort((a,b)=>(isFrontier(a)-isFrontier(b))||((b.agri+b.comm)-(a.agri+a.comm)))[0];if(!p)break;appointGov(p.id,g.id)}
   for(const g of gens)if(g.fac===f.id&&g.gov!=null&&g.loy<42&&f.gold>300&&!g.rewarded&&Math.random()<.7){f.gold-=100;g.loy=clamp(g.loy+RI(8,14),0,100);g.rewarded=true}
+}
+
+/* ================= 수비병 이동 · 동맹 파기 시 퇴거 ================= */
+const garTargets=p=>p.nb.map(i=>provs[i]).filter(q=>q.owner===p.owner);
+const canSendGar=p=>p.sentTurn!==turn&&p.recvTurn!==turn&&sum(p.gar)>0;
+function moveGar(from,to,t){let n=0;for(const k of TYPES){const x=Math.max(0,Math.min(t[k]||0,from.gar[k]));from.gar[k]-=x;to.gar[k]+=x;n+=x}if(n>0){from.sentTurn=turn;to.recvTurn=turn}return n}
+function openTransfer(pid){
+  const p=provs[pid],ts=garTargets(p);if(!ts.length)return toast('맞닿은 내 영토가 없습니다.');
+  showModal(`<h2>🚚 수비병 이동 — ${p.name}</h2><p class="mut">장수 없이 수비병을 <b>맞닿은 내 땅 한 칸</b>으로 옮깁니다. 옮긴 병력은 다음 턴부터 다시 움직일 수 있어요. (병력을 받은 땅은 이번 턴에 보낼 수 없음 · 땅마다 턴당 1회)</p>
+   <p>도착지 <select id="trTo">${ts.map(q=>`<option value="${q.id}">${q.name} (수비병 ${fmt(sum(q.gar))}${isFrontier(q)?' · ⚔️전선':''})</option>`).join('')}</select></p>
+   ${TYPES.map(k=>`<div>${UT[k].icon} ${UT[k].n}: <b id="tv_${k}">${p.gar[k]}</b> / ${p.gar[k]}<input type="range" id="tr_${k}" min="0" max="${p.gar[k]}" step="100" value="${p.gar[k]}" oninput="document.getElementById('tv_${k}').textContent=this.value" ${p.gar[k]?'':'disabled'}></div>`).join('')}
+   <div class="btns"><button onclick="closeModal()">취소</button><button class="pri" onclick="doTransfer(${pid})">🚚 이동</button></div>`);
+}
+function doTransfer(pid){const p=provs[pid],to=provs[+document.getElementById('trTo').value];if(!canSendGar(p))return toast('이번 턴에는 이동할 수 없습니다.');
+  const t=T0();for(const k of TYPES)t[k]=+document.getElementById('tr_'+k).value||0;const n=moveGar(p,to,t);closeModal();
+  if(n){log(`🚚 ${p.name} → ${to.name} 수비병 ${fmt(n)} 이동`);toast(`${to.name}(으)로 ${fmt(n)}명 이동`)}renderAll()}
+function frontDist(fid){const fr=provs.filter(q=>q.owner===fid&&isFrontier(q)).map(q=>q.id);return fr.length?bfs(fr,q=>q.owner===fid):null}
+function pushToFront(fid,list,keep){
+  const df=frontDist(fid);if(!df)return 0;let moved=0,cnt=0;
+  for(const p of list.slice().sort((a,b)=>df[b.id]-df[a.id])){if(p.owner!==fid||!canSendGar(p)||isFrontier(p))continue;
+    const to=garTargets(p).sort((a,b)=>df[a.id]-df[b.id])[0];if(!to||df[to.id]>=df[p.id])continue;
+    const t=T0();for(const k of TYPES)t[k]=Math.max(0,p.gar[k]-(k==='inf'?keep:0));const n=moveGar(p,to,t);if(n){moved+=n;cnt++}}
+  return {moved,cnt};
+}
+function bulkPush(){const r=pushToFront(ME,[...BULK].map(i=>provs[i]),300);if(r.moved){log(`🚚 일괄 이동: ${r.cnt}곳에서 수비병 ${fmt(r.moved)}명을 전선 쪽으로 한 칸 이동`);toast(`${r.cnt}곳 · ${fmt(r.moved)}명 이동`)}else toast('전선 쪽으로 옮길 수 있는 후방 병력이 없습니다.');renderAll()}
+function expelForeign(){
+  for(const a of [...armies]){if(!armies.includes(a))continue;const p=provs[a.prov];if(p.owner<0||p.owner===a.fac||isAlly(a.fac,p.owner))continue;
+    const d=bfs(a.prov);const own=provs.filter(q=>q.owner===a.fac);if(!own.length){destroyArmy(a,null);continue}
+    const best=own.filter(q=>armiesIn(q.id,a.fac).length<3).sort((x,y)=>d[x.id]-d[y.id])[0]||own.sort((x,y)=>d[x.id]-d[y.id])[0];
+    applyLoss(a.t,sum(a.t)*.1);a.mor=clamp(a.mor-10,0,100);a.prov=best.id;a.moved=false;
+    const msg=`🚷 ${fname(a.fac)}의 ${gname(gens[a.gen])} 군단이 ${fname(p.owner)} 땅 <b>${p.name}</b>에서 쫓겨나 ${best.name}(으)로 돌아갔다. (병력 10% 이탈)`;log(msg);
+    if(a.fac===ME||p.owner===ME)events.push({title:'🚷 동맹군 철수',html:msg+'<br><span class="mut">동맹이 깨지면 상대 땅에 있던 군단은 가장 가까운 자기 땅으로 강제 귀환합니다.</span>',btns:[{l:'확인'}]});
+  }
+  cleanupArmies();
 }
 
 /* ================= 투항 권유 ================= */
@@ -1102,6 +1140,7 @@ function upkeep(){
     if(d.state==='truce'){d.truce--;if(d.truce<=0){d.state='neutral';log(`⌛ ${fname(a.id)}·${fname(b.id)} 휴전 기간 만료`)}}
     if(d.state==='alliance'&&d.rel<-10){d.state='neutral';log(`💔 ${fname(a.id)}·${fname(b.id)} 동맹이 깨졌다.`)}
   }
+  expelForeign();
   // 장수 충성
   for(const g of gens){if(g.status!=='active'||g.fac<0)continue;const f=facs[g.fac];
     let dl=RI(-2,1);if(g.amb>70)dl-=1;const rank=facs.filter(x=>x.alive).sort((x,y)=>facPower(y.id)-facPower(x.id)).findIndex(x=>x.id===f.id);
@@ -1311,7 +1350,8 @@ function renderPanel(){
       <button ${dis} onclick="doProv('relief')">구휼(민심) <span class="f">${reliefCost(facs[ME])}</span></button>
       <button ${dis||(p.ambush?'disabled':'')} onclick="doProv('ambush')" title="이 땅이 공격받으면 1합에 복병이 적을 덮칩니다 (1회용)">🪤 매복 설치 <span class="g">80</span></button>${p.ambush?'<span class="tag" style="align-self:center">🪤 매복 대기 중</span>':''}</div>
       <h3 style="margin-top:10px">⚔️ 징병 (500명)</h3><div class="grid2">${TYPES.map(k=>`<button ${dis||(!canRecruit(p,k)?'disabled':'')} title="${UT[k].d}" onclick="doProv('recruit','${k}')">${UT[k].icon} ${UT[k].n} <span class="g">${UT[k].cost}</span></button>`).join('')}</div>
-      <div class="grid2"><button class="org" onclick="openForm(${p.id})" ${idleGens(ME).length&&sum(p.gar)>=300&&armiesIn(p.id,ME).length<3?'':'disabled'}>🚩 군단 편성</button><span class="mut" style="font-size:12px;align-self:center">대기 장수 ${idleGens(ME).length}명</span></div>`;
+      <div class="grid2"><button class="org" onclick="openForm(${p.id})" ${idleGens(ME).length&&sum(p.gar)>=300&&armiesIn(p.id,ME).length<3?'':'disabled'}>🚩 군단 편성</button><span class="mut" style="font-size:12px;align-self:center">대기 장수 ${idleGens(ME).length}명</span>
+        <button onclick="openTransfer(${p.id})" ${canSendGar(p)&&garTargets(p).length?'':'disabled'} title="장수 없이 맞닿은 내 땅 한 칸으로 수비병을 옮깁니다">🚚 수비병 이동</button><span class="mut" style="font-size:12px;align-self:center">${p.sentTurn===turn?'이번 턴 이동함':p.recvTurn===turn?'병력 도착(다음 턴 가능)':'턴당 1회 · 한 칸'}</span></div>`;
   }
   if(!mine&&!over&&!isAlly(ME,p.owner)){
     const ready=armies.filter(a=>a.fac===ME&&!a.acted&&provs[a.prov].nb.includes(p.id));
@@ -1494,7 +1534,7 @@ function dipDo(fid,kind){
   else if(kind==='trade'){if(aiAccept(f,me,'trade')){applyTreaty(ME,fid,'trade');msg='교역 협정이 체결되었습니다! 매달 금 수입이 늘어납니다.'}else{msg='교역 제안이 거절되었습니다. (관계 5 이상 필요)'}}
   else if(kind==='truce'){if(aiAccept(f,me,'truce')){applyTreaty(ME,fid,'truce');msg='휴전이 성립되었습니다. (12개월)'}else{addRel(ME,fid,-3);msg='휴전 제안이 거절되었습니다.'}}
   else if(kind==='alliance'){if(aiAccept(f,me,'alliance')){applyTreaty(ME,fid,'alliance');msg='동맹이 체결되었습니다!'}else msg='동맹 제안이 거절되었습니다. (관계 45 이상, 또는 공동의 적이 있으면 20 이상)'}
-  else if(kind==='breakA'){d.state='neutral';addRel(ME,fid,-30);log(`💔 ${fname(ME)}이 ${fname(fid)}과의 동맹을 파기했다.`);msg='동맹을 파기했습니다.'}
+  else if(kind==='breakA'){d.state='neutral';addRel(ME,fid,-30);log(`💔 ${fname(ME)}이 ${fname(fid)}과의 동맹을 파기했다.`);expelForeign();setTimeout(()=>{if(events.length)nextEvent()},50);msg='동맹을 파기했습니다.'}
   else if(kind==='war'){if(d.state==='truce')betray(ME,fid);declareWar(ME,fid,true);msg=`${f.name}에 선전포고했습니다!`}
   else if(kind==='sell'){if(me.food<300)return toast('군량이 부족합니다.');const price=Math.round(300*(f.food<500?R(.85,1.1):R(.45,.65)));
     if(d.rel>-30&&f.gold>=price){me.food-=300;f.food+=300;me.gold+=price;f.gold-=price;addRel(ME,fid,3);msg=`군량 300을 금 ${price}에 팔았습니다.`;log(`📦 ${fname(fid)}에 군량 300 판매 (+금 ${price})`)}else msg='상대가 거래를 거절했습니다.'}
@@ -1553,6 +1593,8 @@ function openHelp(first){
    <li><b>보급</b> — 도읍과 이어진 땅에서만 보급. 끊기면 🚚보급대를 보내세요. 겨울은 혹독, 가을엔 추수!</li>
    <li><b>외교</b> — 선물·교역·군량 거래·휴전·동맹·공물·적 장수 매수. 휴전을 깨면 배신자.</li>
    <li><b>격변</b> — 충성 낮은 장수는 이적·독립, 민심 낮은 땅엔 민란, 재야엔 신흥 세력이 일어나요.</li>
+   <li><b>🚚 수비병 이동</b> — 장수 없이도 수비병을 맞닿은 내 땅으로 한 턴에 한 칸씩 옮길 수 있어요. 일괄 내정에서 후방 병력을 한꺼번에 전선 쪽으로 밀어 줄 수도 있어요.</li>
+   <li><b>🚷 동맹 파기</b> — 동맹이 깨지면 상대 땅에 있던 군단은 가장 가까운 자기 땅으로 강제 귀환하고 병력 10%가 이탈해요.</li>
    <li><b>🏛️ 태수</b> — 군단을 맡지 않은 장수를 영토의 태수로 앉혀요. 정치 60 이상이면 매 턴 농업·상업이 저절로 오르고 민심이 떨어지지 않아요(징병은 안 함). 정치 45 미만이면 오히려 쇠퇴하고 민심이 떨어져 민란이 나요. 정치가 높을수록 야망도 커서, 충성 30 이하가 3턴 이어지면 맞닿은 우리 땅을 모두 끌어모아 독립해요. 충신 특기 + 높은 정치 = 최고의 태수!</li>
    <li><b>📋 일괄 내정</b> — 상단 [📋 일괄 내정]을 켜고 내 땅 여러 곳을 눌러(또는 '전선만', '후방만' 버튼) 한꺼번에 개발·징병하세요. 수도 레벨이 오르면 전국 개발 비용과 효과가 함께 커져요.</li>
    <li><b>📊 세력도</b> — 모든 나라의 영토·금·군량·병력·수도와, 나라끼리의 전쟁·동맹 관계표를 볼 수 있어요. 외교 창에서 다른 나라에 <b>⚔️공동 공격</b>을 제안할 수도 있어요.</li>
