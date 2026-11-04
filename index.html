@@ -9,6 +9,7 @@
 :root{--panel:#212836;--panel2:#2a3243;--line:#374159;--txt:#e9edf5;--mut:#9aa4b8;--gold:#ffc940;--food:#9be37b;--blue:#3d8bff}
 *{box-sizing:border-box}
 body{margin:0;background:radial-gradient(circle at 30% 0,#283046,#11141b 70%);color:var(--txt);font-family:'Noto Sans KR',system-ui,sans-serif;min-height:100vh;font-size:14px}
+#topbar{position:sticky;top:0;z-index:8;background:#151a24ee;backdrop-filter:blur(6px);border-bottom:1px solid #ffffff12;margin-bottom:8px}
 header{display:flex;align-items:center;gap:10px;padding:10px 14px;flex-wrap:wrap}
 h1{font-size:20px;margin:0;font-weight:900;letter-spacing:-.5px}
 .chip{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:5px 12px;font-weight:700;white-space:nowrap}
@@ -79,7 +80,7 @@ select{font-family:inherit;background:#2f3850;color:var(--txt);border:1px solid 
 </style>
 </head>
 <body>
-<header>
+<div id="topbar"><header>
   <h1>🏯 천하쟁패</h1>
   <span class="chip" id="cDate"></span>
   <span class="chip">💰 <span class="g" id="cGold"></span></span>
@@ -94,7 +95,7 @@ select{font-family:inherit;background:#2f3850;color:var(--txt);border:1px solid 
   <button id="nextBtn" onclick="nextArmy()">🚩 다음 군단 <span id="nA"></span></button>
   <button class="pri" id="endBtn" onclick="endTurn()">턴 종료 ▶</button>
 </header>
-<div id="terrbar"></div>
+<div id="terrbar"></div></div>
 <div class="wrap">
   <div id="mapbox"><svg id="map"></svg><div id="hint"></div></div>
   <div id="side">
@@ -128,7 +129,7 @@ function terrMod(type,terr){
   if(type==='sie')return terr==='plain'?1:0.8;
   return 1;
 }
-const PALETTE=['#3d8bff','#e5484d','#22c55e','#f5a524','#8e4ec6','#e93d82','#a16207','#06b6d4','#d4c200','#f97316','#6e56cf','#94a3b8','#7c9a2a','#be123c'];
+const PALETTE=['#3d8bff','#e5484d','#22c55e','#f5a524','#8e4ec6','#e93d82','#a16207','#06b6d4','#d4c200','#f97316','#6e56cf','#7c2d12','#7c9a2a','#be123c'];
 const SY1='청백홍금은옥송운하진한서남북동화월성평양안영강태무천덕명계현',SY2='주양산천원림성포강곡령평계진해도안릉수하';
 const SUR=['강','한','서','윤','조','백','남궁','제갈','황보','진','위','하','류','양','마','손','문','공손','설','고'];
 const GIV=['무진','태호','운','청','결','현','도윤','휘','장','검','비','온','연','패','건','율','호','랑','송','익','훈','표','관','악','준','담','령','찬','범','혁'];
@@ -192,6 +193,7 @@ function genMap(){
     provs.push(p);cellAt[c.q+','+c.r]=p;
   }
   for(const p of provs)p.nb=nbCells(p.q,p.r).map(([q,r])=>cellAt[q+','+r]).filter(Boolean).map(x=>x.id);
+  const keys=Object.keys(SPECS);shuffle([...provs]).slice(0,7).forEach((p,i)=>{p.spec=keys[i%keys.length]});
 }
 function bfs(src,ok){const d=new Array(provs.length).fill(Infinity);const qu=[];for(const s of [].concat(src)){d[s]=0;qu.push(s)}
   while(qu.length){const x=qu.shift();for(const y of provs[x].nb)if(d[y]===Infinity&&(!ok||ok(provs[y]))){d[y]=d[x]+1;qu.push(y)}}return d}
@@ -207,7 +209,7 @@ const usedNames=new Set();
 function makeGen(fac,q=0){
   let nm;do{nm=pick(SUR)+pick(GIV)}while(usedNames.has(nm));usedNames.add(nm);
   const g={id:gens.length,name:nm,war:clamp(RI(40,90)+q,30,99),int:clamp(RI(35,90)+q,30,99),pol:clamp(RI(30,90)+q,30,99),
-    loy:RI(60,95),amb:RI(10,95),trait:Math.random()<.75?pick(Object.keys(TRAITS)):null,fac,army:null,status:fac<0?'wander':'active',captor:null,rewarded:false};
+    loy:RI(60,95),amb:RI(10,95),trait:Math.random()<.75?pick(NORMAL_TRAITS):null,fac,army:null,status:fac<0?'wander':'active',captor:null,rewarded:false};
   gens.push(g);return g;
 }
 function makeArmy(fac,prov,gen,t){
@@ -258,7 +260,14 @@ const TAC={
 const BEATS={charge:'volley',volley:'wall',wall:'charge'};
 const MATCHTXT={charge:'돌격이 화살비를 뚫고 들어갔다!',volley:'화살비가 방진을 무너뜨렸다!',wall:'방진이 돌격을 막아냈다!'};
 const WEATHER={clear:{n:'맑음',icon:'☀️',d:'특별한 효과 없음'},rain:{n:'비',icon:'🌧️',d:'화살비 -30%, 계략 성공률 -15%'},fog:{n:'안개',icon:'🌫️',d:'계략·기습 성공률 +15%, 정찰 어려움'},snow:{n:'눈',icon:'❄️',d:'돌격 -25%, 양군 사기 저하'}};
-const TRAITS={'맹장':'돌격 위력 +30%','궁신':'화살비 위력 +30%','철벽':'방진 위력 +30%','책사':'계략 성공률 +20%','기병대장':'기병이 많을수록 강해짐','산악왕':'숲·산 전투 +15%','명장':'모든 전술 +10%','공성가':'적 성벽 효과 -50%'};
+const TRAITS={'맹장':'돌격 위력 +30%','궁신':'화살비 위력 +30%','철벽':'방진 위력 +30%','책사':'계략 성공률 +20%','기병대장':'기병이 많을수록 강해짐','산악왕':'숲·산 전투 +15%','명장':'모든 전술 +10%','공성가':'적 성벽 효과 -50%',
+  '충신':'충성이 50 아래로 떨어지지 않음 · 매수 불가','모병가':'우리 나라 징병 시 +200명','둔전가':'이 장수의 군단은 보급이 끊겨도 버팀',
+  '군신':'【전설】 모든 전술 +25%, 사기 저하 절반','와룡':'【전설】 계략 성공률 +35%, 정찰이 항상 정확','패왕':'【전설】 돌격 +50%, 일기토 무력 +15','철옹성':'【전설】 방어 전투력 +40%','명재상':'【전설】 나라 금 수입 +20%'};
+const NORMAL_TRAITS=['맹장','궁신','철벽','책사','기병대장','산악왕','명장','공성가','충신','모병가','둔전가'];
+const LEGEND_TRAITS={war:['군신','패왕','철옹성'],int:['와룡','명재상','군신']};
+const facHasTrait=(fid,tr)=>gens.some(g=>g.fac===fid&&g.status==='active'&&g.trait===tr);
+const SPECS={granary:{n:'곡창',icon:'🌾',d:'농업 개발 ×1.5 · 수도일 때 주변 농업 +2/턴'},market:{n:'상도',icon:'💰',d:'상업 개발 ×1.5 · 수도일 때 주변 상업 +2/턴'},fortress:{n:'요새',icon:'🏰',d:'성벽 보수 ×1.5 · 수도일 때 성벽 +3/턴, 방어 +15%'},barracks:{n:'병영',icon:'⚔️',d:'징병 +200명 · 수도일 때 매턴 창병 +100'},shrine:{n:'명승',icon:'🎐',d:'구휼 효과 ×1.5 · 수도일 때 전국 민심 +1/턴'}};
+const CAP_COST=1000,CAP_REBUILD=600;
 function makeSide(list,prov,isDef){
   const t=T0();let w=0,train=0,exp=0,mor=0,skill=0,gen={name:'수비대장',war:38,int:38,trait:null};
   for(const a of list){const n=sum(a.t);for(const k of TYPES)t[k]+=a.t[k];train+=a.train*n;exp+=a.exp*n;mor+=a.mor*n;skill+=(a.skill[prov.terr]||0)*n;w+=n;const g=gens[a.gen];if(g&&g.war>gen.war)gen=g}
@@ -271,7 +280,7 @@ function eff(s,et){
   for(const i of TYPES){if(!s.t[i])continue;let m=1;if(en>0){m=0;for(const j of TYPES)m+=(et[j]/en)*((MATCH[i]||{})[j]||1)}
     tot+=s.t[i]*UT[i].base*terrMod(i,s.terr)*m}
   tot*=(0.6+0.4*s.train/100)*(0.4+s.mor/160)*(1+s.exp/250)*(1+(s.gen.war+(s.genMod||0)-50)/120)*(1+s.skill/400);
-  if(s.isDef)tot*=TERR[s.terr].def*(1+s.wall/150);
+  if(s.isDef)tot*=TERR[s.terr].def*(1+s.wall/150)*(s.gen.trait==='철옹성'?1.4:1)*(s.legendDef?1.3:1)*(s.prov&&s.prov.spec==='fortress'&&s.prov.owner>=0&&facs[s.prov.owner].cap===s.prov.id?1.15:1);
   return tot;
 }
 function surpriseChance(A,D){return clamp(0.35+(A.gen.int-D.gen.int)/150+(D.terr==='forest'?0.1:D.terr==='mount'?0.05:0)-D.wall/400,0.1,0.85)}
@@ -292,10 +301,12 @@ function prepBattle(a,p,surprise){
   const defArmies=old>=0?armiesIn(p.id,old):[];
   const A=makeSide([a],p,false),D=makeSide(defArmies,p,true);
   D.wall=siegeWall(A,p);
+  const lg=legendAt(p.id);if(lg&&old===-1){D.gen=lg;D.legendDef=true;D.mor=Math.max(D.mor,85)}
   const B={a,p,af,old,defArmies,A,D,surprise,sOK:null,weather:pickWeather(),round:0,rounds:[],lines:[],result:null,iA:sum(A.t),iD:sum(D.t),
-    ambush:!!p.ambush,duel:false,compA:{...A.t},compD:{...D.t},gA:A.gen.name,gD:D.gen.name,last:{lA:0,lD:0}};
+    legend:lg&&old===-1?lg:null,ambush:!!p.ambush,duel:false,compA:{...A.t},compD:{...D.t},gA:A.gen.name,gD:D.gen.name,last:{lA:0,lD:0}};
   p.ambush=false;
   B.lines.push(`${WEATHER[B.weather].icon} 날씨: ${WEATHER[B.weather].n} — ${WEATHER[B.weather].d}`);
+  if(B.legend)B.lines.push(`🌟 이 땅에 머물던 전설의 인재 <b>${B.legend.name}</b>이(가) 백성들을 이끌고 방어를 지휘한다! (방어력 +30%)`);
   if(B.iD===0){B.result='att';B.lines.push('적이 성을 비우고 달아났다!');return B}
   if(surprise){B.sOK=Math.random()<surpriseChance(A,D)+(B.weather==='fog'?.15:0);
     if(B.sOK){D.mor-=20;B.lines.push(`⚡ 기습 성공! ${D.gen.name}의 군이 혼란에 빠졌다. (1합 공격측 피해 1.8배)`)}
@@ -309,12 +320,13 @@ function tacFactor(S,tac,B){
   const n=sum(S.t)||1,sh=k=>(S.t[k]||0)/n;
   let f={charge:0.7+0.7*sh('cav')+0.25*sh('inf')+0.2*sh('mtn'),wall:0.75+0.55*sh('inf')+0.2*sh('mtn'),volley:0.6+0.9*sh('arc'),scheme:0.85}[tac];
   const tr=S.gen.trait;
+  if(tr==='군신')f*=1.25;if(tr==='패왕'&&tac==='charge')f*=1.5;
   if(tr==='맹장'&&tac==='charge')f*=1.3;if(tr==='궁신'&&tac==='volley')f*=1.3;if(tr==='철벽'&&tac==='wall')f*=1.3;
   if(tr==='명장')f*=1.1;if(tr==='기병대장')f*=1+0.4*sh('cav');if(tr==='산악왕'&&S.terr!=='plain')f*=1.15;
   if(B.weather==='rain'&&tac==='volley')f*=.7;if(B.weather==='snow'&&tac==='charge')f*=.75;if(B.weather==='fog'&&tac==='volley')f*=.85;
   return f;
 }
-function schemeChance(S,O,w){return clamp(0.4+(S.gen.int-O.gen.int)/120+(S.gen.trait==='책사'?.2:0)+(w==='fog'?.15:0)-(w==='rain'?.15:0),0.1,0.9)}
+function schemeChance(S,O,w){return clamp(0.4+(S.gen.int-O.gen.int)/120+(S.gen.trait==='책사'?.2:0)+(S.gen.trait==='와룡'?.35:0)+(w==='fog'?.15:0)-(w==='rain'?.15:0),0.1,0.9)}
 function aiTactic(B,role){
   const S=role==='A'?B.A:B.D,O=role==='A'?B.D:B.A;const w={};
   for(const t of ['charge','wall','volley'])w[t]=tacFactor(S,t,B);
@@ -339,7 +351,7 @@ function runRound(B,tA,tD){
   const eA=eff(A,D.t)*mA,eD=eff(D,A.t)*mD;
   const lD=Math.min(sum(D.t),eA*0.12*R(.85,1.15)),lA=Math.min(sum(A.t),eD*0.12*R(.85,1.15));
   applyLoss(D.t,lD);applyLoss(A.t,lA);
-  A.mor=clamp(A.mor-lA/Math.max(1,B.iA)*90,0,100);D.mor=clamp(D.mor-lD/Math.max(1,B.iD)*90,0,100);
+  A.mor=clamp(A.mor-lA/Math.max(1,B.iA)*90*(A.gen.trait==='군신'?.5:1),0,100);D.mor=clamp(D.mor-lD/Math.max(1,B.iD)*90*(D.gen.trait==='군신'?.5:1),0,100);
   B.rounds.push({lA:Math.round(lA),lD:Math.round(lD),a:sum(A.t),d:sum(D.t),tA,tD});B.last={lA,lD};
   L.push(`　피해 — 공격측 -${fmt(lA)} / 방어측 -${fmt(lD)}`);
   B.lines.push(...L);
@@ -355,7 +367,7 @@ function doDuel(B,role){
   const S=role==='A'?B.A:B.D,O=role==='A'?B.D:B.A;B.duel=true;
   if(O.gen.war<S.gen.war-15&&Math.random()<.7){S.mor=clamp(S.mor+10,0,100);O.mor=clamp(O.mor-10,0,100);B.lines.push(`🤺 ${S.gen.name}의 일기토 신청! ${O.gen.name}은(는) 겁을 먹고 나오지 않았다. (아군 사기↑ 적 사기↓)`);checkBattleEnd(B);return}
   let ws=0,wo=0;const L=[`🤺 <b>일기토!</b> ${S.gen.name}(무력 ${S.gen.war}) vs ${O.gen.name}(무력 ${O.gen.war})`];
-  for(let i=1;i<=3&&ws<2&&wo<2;i++){const a=S.gen.war+R(0,35),b=O.gen.war+R(0,35);if(a>=b){ws++;L.push(`　${i}번째 겨룸: ${S.gen.name}의 일격!`)}else{wo++;L.push(`　${i}번째 겨룸: ${O.gen.name}이(가) 받아쳤다!`)}}
+  const dw=g=>g.war+(g.trait==='패왕'?15:0);for(let i=1;i<=3&&ws<2&&wo<2;i++){const a=dw(S.gen)+R(0,35),b=dw(O.gen)+R(0,35);if(a>=b){ws++;L.push(`　${i}번째 겨룸: ${S.gen.name}의 일격!`)}else{wo++;L.push(`　${i}번째 겨룸: ${O.gen.name}이(가) 받아쳤다!`)}}
   const W=ws>wo?S:O,Lo=ws>wo?O:S;W.mor=clamp(W.mor+20,0,100);Lo.mor=clamp(Lo.mor-25,0,100);
   L.push(`🏆 <b>${W.gen.name} 승리!</b> 군의 사기가 하늘을 찌른다.`);if(Math.random()<.3){Lo.genMod=-15;L.push(`🩸 ${Lo.gen.name}이(가) 부상을 입었다. (지휘력 저하)`)}
   B.lines.push(...L);checkBattleEnd(B);
@@ -376,6 +388,7 @@ function finishBattle(B){
     p.gar=T0();p.owner=af;p.order=30;p.wall=Math.max(0,p.wall-15);p.ambush=false;
     if(armies.includes(a))a.prov=p.id;
     if(old>=0){addRel(af,old,-15);onProvinceLost(old,p,af)}
+    if(B.legend){const lg=B.legend;if(Math.random()<.35){joinLegend(lg,af,'전투 끝에 감복하여')}else{const nb=pick(p.nb);lg.loc=nb;log(`🌟 ${gname(lg)}이(가) ${provs[nb].name}(으)로 몸을 피했다.`)}}
   }else{a.exp=clamp(a.exp+6,0,100);defArmies.forEach(x=>x.exp=clamp(x.exp+8,0,100))}
   a.acted=true;cleanupArmies();
   const verb=B.surprise?(B.sOK?'기습 성공!':'기습 실패,'):'';
@@ -402,8 +415,11 @@ function cleanupArmies(){for(const a of [...armies])if(sum(a.t)<60){const g=gens
 function onProvinceLost(fid,p,by){
   const f=facs[fid];const own=ownProvs(fid);
   if(!own.length){eliminate(fid,by);return}
-  if(f.cap===p.id){const nc=own.sort((a,b)=>sum(b.gar)-sum(a.gar))[0];f.cap=nc.id;log(`🏚️ ${fname(fid)}의 도읍이 함락되어 <b>${nc.name}</b>(으)로 천도했다.`);
-    for(const g of gens)if(g.fac===fid)g.loy=clamp(g.loy-8,0,100)}
+  if(f.cap===p.id){const nc=own.sort((a,b)=>sum(b.gar)-sum(a.gar))[0];f.cap=nc.id;f.capTemp=true;
+    const lost=Math.floor(f.gold*.3);f.gold-=lost;for(const q of own)q.order=clamp(q.order-10,0,100);
+    log(`🏚️ ${fname(fid)}의 수도가 함락됐다! 국고 ${lost}을 잃고 <b>${nc.name}</b>을(를) 임시 수도로 삼았다.`);
+    if(fid===ME)events.push({title:'🏚️ 수도 함락!',html:`수도 <b>${p.name}</b>이(가) 함락되었습니다!<br>· 국고의 30%(금 ${lost})를 잃었습니다<br>· 모든 영토 민심 -10, 장수 충성 -10<br>· <b>${nc.name}</b>이(가) 임시 수도가 되었습니다. 임시 수도에는 수도 효과가 없습니다.<br><span class="mut">원하는 내 땅에서 [수도 지정](금 ${CAP_REBUILD})을 해 수도를 재건하세요.</span>`,btns:[{l:'재건하겠다'}]});
+    for(const g of gens)if(g.fac===fid)g.loy=clamp(g.loy-10,g.trait==='충신'?50:0,100)}
 }
 function eliminate(fid,by){
   const f=facs[fid];f.alive=false;
@@ -441,17 +457,19 @@ function provAction(fid,p,kind,type){
   const f=facs[fid];if(p.owner!==fid)return '내 영토가 아닙니다.';if(p.acted)return '이번 턴에 이미 명령했습니다.';
   const cost={agri:100,comm:100,wall:120}[kind];
   if(cost&&f.gold<cost)return '금이 부족합니다.';
-  if(kind==='agri'){if(p.agri>=100)return '더 개발할 수 없습니다.';f.gold-=cost;p.agri=Math.min(100,p.agri+RI(5,8))}
-  else if(kind==='comm'){if(p.comm>=100)return '더 개발할 수 없습니다.';f.gold-=cost;p.comm=Math.min(100,p.comm+RI(5,8))}
-  else if(kind==='wall'){if(p.wall>=100)return '성벽이 최고 수준입니다.';f.gold-=cost;p.wall=Math.min(100,p.wall+12)}
+  const mul=sp=>p.spec===sp?1.5:1;
+  if(kind==='agri'){if(p.agri>=100)return '더 개발할 수 없습니다.';f.gold-=cost;p.agri=Math.min(100,p.agri+Math.round(RI(5,8)*mul('granary')))}
+  else if(kind==='comm'){if(p.comm>=100)return '더 개발할 수 없습니다.';f.gold-=cost;p.comm=Math.min(100,p.comm+Math.round(RI(5,8)*mul('market')))}
+  else if(kind==='wall'){if(p.wall>=100)return '성벽이 최고 수준입니다.';f.gold-=cost;p.wall=Math.min(100,p.wall+Math.round(12*mul('fortress')))}
   else if(kind==='ambush'){if(p.ambush)return '이미 매복이 있습니다.';if(f.gold<80)return '금이 부족합니다.';f.gold-=80;p.ambush=true}
-  else if(kind==='relief'){if(f.food<150)return '군량이 부족합니다.';f.food-=150;p.order=Math.min(100,p.order+15)}
+  else if(kind==='relief'){if(f.food<150)return '군량이 부족합니다.';f.food-=150;p.order=Math.min(100,p.order+Math.round(15*(p.spec==='shrine'?1.5:1)))}
   else if(kind==='recruit'){
     if(!canRecruit(p,type))return `${UT[type].n}은 이 지형에서 징병할 수 없습니다.`;
     if(p.order<25)return '민심이 너무 낮아 징병할 수 없습니다.';
     if(f.gold<UT[type].cost)return '금이 부족합니다.';
-    f.gold-=UT[type].cost;p.gar[type]+=500;p.order=Math.max(0,p.order-6);
+    f.gold-=UT[type].cost;p.gar[type]+=500+(facHasTrait(fid,'모병가')?200:0)+(p.spec==='barracks'?200:0);p.order=Math.max(0,p.order-6);
   }
+  if(f.cap===p.id&&!f.capTemp)p.order=Math.max(p.order,50);
   p.acted=true;return null;
 }
 
@@ -504,7 +522,7 @@ function armyAct(id,kind){
 function aiTurn(f){
   if(!f.alive)return;
   f.dipActed={};
-  aiDiplomacy(f);aiDomestic(f);aiForm(f);
+  aiCapital(f);aiDiplomacy(f);aiDomestic(f);aiForm(f);
   for(const a of armies.filter(a=>a.fac===f.id)){if(!f.alive||over)return;if(armies.includes(a))aiArmy(f,a)}
 }
 function propose(from,to,type,extra){
@@ -598,6 +616,74 @@ function aiArmy(f,a){
   if(bm!=null){a.prov=bm;a.acted=true}
 }
 
+/* ================= 수도·명당·전설의 인재 ================= */
+const legendAt=pid=>gens.find(g=>g.status==='legend'&&g.loc===pid);
+function capitalTick(f,own){
+  if(f.capTemp||f.cap==null)return;const c=provs[f.cap];if(!c||c.owner!==f.id)return;
+  c.order=Math.max(c.order,50);const k=c.spec;
+  for(const i of c.nb){const q=provs[i];if(q.owner!==f.id)continue;
+    q.agri=Math.min(100,q.agri+(k==='granary'?2:1));q.comm=Math.min(100,q.comm+(k==='market'?2:1));if(q.order<70)q.order++}
+  if(k==='fortress')c.wall=Math.min(100,c.wall+3);
+  if(k==='barracks')c.gar.inf+=100;
+  if(k==='shrine')for(const q of own)q.order=Math.min(100,q.order+1);
+}
+const capCost=f=>f.capTemp?CAP_REBUILD:CAP_COST;
+function setCapital(fid,pid){
+  const f=facs[fid],p=provs[pid],cost=capCost(f);
+  if(p.owner!==fid)return '내 영토가 아닙니다.';if(f.cap===pid&&!f.capTemp)return '이미 수도입니다.';if(f.gold<cost)return `금 ${cost}이 필요합니다.`;
+  f.gold-=cost;const re=f.capTemp;f.cap=pid;f.capTemp=false;p.order=Math.max(p.order,50);
+  log(`🏯 ${fname(fid)}이(가) <b>${p.name}</b>을(를) ${re?'새 수도로 재건':'새 수도로 정했다'}.${p.spec?` (${SPECS[p.spec].icon}${SPECS[p.spec].n})`:''}`);
+  return null;
+}
+function askCapital(pid){
+  const f=facs[ME],p=provs[pid],cost=capCost(f);
+  showModal(`<h2>🏯 ${p.name}을(를) 수도로 정할까요?</h2>
+   <p>비용: <span class="g">금 ${cost}</span>${f.capTemp?' (수도 재건)':''} · 보유 금 ${f.gold}</p>
+   <ul><li>수도와 맞닿은 내 영토는 매 턴 <b>농업·상업이 저절로 성장</b>하고 민심이 오릅니다.</li>
+   <li>수도의 민심은 <b>50 아래로 떨어지지 않습니다</b>. 수도에서 보급선이 시작됩니다.</li>
+   <li>${p.spec?`이곳은 명당 <b>${SPECS[p.spec].icon}${SPECS[p.spec].n}</b> — ${SPECS[p.spec].d}`:'<span class="mut">이곳은 명당이 아닙니다. 지도에 🌾💰🏰⚔️🎐 표시가 있는 땅이 명당이에요.</span>'}</li>
+   <li style="color:#ff9a9a">⚠️ 수도가 함락되면 국고 30% 손실, 전국 민심 -10, 장수 충성 -10, 수도 효과 상실!</li></ul>
+   <div class="btns"><button onclick="closeModal()">취소</button><button class="pri" ${f.gold<cost?'disabled':''} onclick="doCapital(${pid})">🏯 수도 지정</button></div>`);
+}
+function doCapital(pid){const e=setCapital(ME,pid);closeModal();if(e)toast(e);else toast('새 수도가 정해졌습니다!');renderAll()}
+function spawnLegend(){
+  if(gens.filter(g=>g.status==='legend').length>=2)return;
+  const type=Math.random()<.5?'war':'int';const g=makeGen(-1,0);
+  if(type==='war'){g.war=RI(95,99);g.int=RI(45,85)}else{g.int=RI(95,99);g.war=RI(40,75)}
+  g.pol=RI(60,95);g.amb=RI(10,45);g.loy=90;g.trait=pick(LEGEND_TRAITS[type]);g.status='legend';g.legend=true;g.timer=3;
+  const neutral=provs.filter(p=>p.owner<0&&!legendAt(p.id));g.loc=(neutral.length&&Math.random()<.5?pick(neutral):pick(provs)).id;
+  const p=provs[g.loc];
+  log(`🌟 <b>전설의 인재 출현!</b> ${gname(g)}(무 ${g.war}·지 ${g.int}, ✨${g.trait})이(가) <b>${p.name}</b>에 나타났다는 소문이 천하에 퍼졌다.`);
+  events.push({title:'🌟 전설의 인재 출현!',html:`천하에 소문이 퍼졌습니다. <b>${g.name}</b>(무력 ${g.war} · 지력 ${g.int} · 정치 ${g.pol})이(가) <b>${p.name}</b>(${fname(p.owner)})에 나타났습니다!<br>✨특기 <b>${g.trait}</b> — ${TRAITS[g.trait]}<br><br><span class="mut">인재는 3턴마다 이웃 땅으로 옮겨 다닙니다. 인재가 <b>내 땅</b>에 있으면 스카우트를 제안할 수 있어요. 중립 땅에 있으면 그 땅의 방어를 지휘합니다.</span>`,btns:[{l:'지도에서 확인',fn:()=>{selP=g.loc;selA=null}},{l:'확인'}]});
+}
+function joinLegend(g,fid,why){
+  g.status='active';g.fac=fid;g.loc=null;g.loy=90;
+  log(`🌟 전설의 인재 ${gname(g)}이(가) ${why||''} ${fname(fid)}에 합류했다!`);
+  events.push(fid===ME?{title:'🌟 인재 영입 성공!',html:`<b>${g.name}</b>(✨${g.trait})이(가) 우리 나라에 합류했습니다! 장수 창에서 확인하세요.`,btns:[{l:'만세!'}]}
+    :{title:'🌟 인재의 행방',html:`전설의 인재 <b>${g.name}</b>(✨${g.trait})이(가) ${fname(fid)}에 출사했습니다. 천하의 판도가 흔들립니다.`,btns:[{l:'확인'}]});
+}
+function legendTick(){
+  for(const g of gens.filter(x=>x.status==='legend')){
+    const p=provs[g.loc];
+    if(p.owner>=0&&p.owner!==ME&&facs[p.owner].alive&&facs[p.owner].gold>=500&&Math.random()<.2){facs[p.owner].gold-=500;joinLegend(g,p.owner,'스카우트 제안을 받아들여');continue}
+    g.timer--;if(g.timer<=0){g.timer=3;g.loc=pick(p.nb);const q=provs[g.loc];log(`🌟 ${gname(g)}이(가) <b>${q.name}</b>(${fname(q.owner)})(으)로 옮겨 갔다.`);
+      if(q.owner===ME)events.push({title:'🌟 인재가 우리 땅에!',html:`전설의 인재 <b>${g.name}</b>이(가) 우리 <b>${q.name}</b>에 머물고 있습니다. 3턴 안에 스카우트를 제안해 보세요!`,btns:[{l:'가 보자',fn:()=>{selP=q.id;selA=null}},{l:'확인'}]})}
+  }
+  if(turn>3&&Math.random()<.07)spawnLegend();
+}
+function scoutChance(g){const bestPol=Math.max(30,...gens.filter(x=>x.fac===ME&&x.status==='active').map(x=>x.pol));const f=facs[ME];
+  return clamp(.3+(bestPol-50)/150+ownProvs(ME).length/provs.length*.6+(f.cap===g.loc&&!f.capTemp?.15:0),.1,.85)}
+function scoutLegend(gid){
+  const g=gens[gid],f=facs[ME];if(!g||g.status!=='legend'||provs[g.loc].owner!==ME)return;if(g.tried===turn)return toast('이번 턴에는 이미 제안했습니다.');if(f.gold<500)return toast('금 500이 필요합니다.');
+  g.tried=turn;
+  if(Math.random()<scoutChance(g)){f.gold-=500;joinLegend(g,ME,'삼고초려 끝에');renderAll();nextEvent()}
+  else{f.gold-=100;toast(`${g.name}: "아직 때가 아닌 듯합니다…" (예물 금 100)`);log(`🌟 ${gname(g)}이(가) 우리의 스카우트 제안을 정중히 거절했다.`);renderAll()}
+}
+function aiCapital(f){
+  if(f.capTemp&&f.gold>=CAP_REBUILD+150){const own=ownProvs(f.id);const best=own.sort((a,b)=>(!!b.spec-!!a.spec)||(sum(b.gar)-sum(a.gar)))[0];if(best)setCapital(f.id,best.id);return}
+  if(!f.capTemp&&f.gold>CAP_COST+900&&!provs[f.cap].spec&&Math.random()<.05){const sp=ownProvs(f.id).find(p=>p.spec&&!isFrontier(p));if(sp)setCapital(f.id,sp.id)}
+}
+
 /* ================= 턴 진행 ================= */
 function endTurn(){
   if(over||document.getElementById('modal').classList.contains('on'))return;
@@ -622,6 +708,7 @@ function upkeep(){
   for(const f of facs){if(!f.alive)continue;
     const own=ownProvs(f.id);let g=0,fd=0;
     for(const p of own){g+=p.comm*(0.6+p.order/250)*1.3;fd+=p.agri*sm}
+    if(facHasTrait(f.id,'명재상'))g*=1.2;
     for(const o of facs)if(o.alive&&o.id!==f.id&&dip(f.id,o.id).trade)g+=25+ownProvs(o.id).length*3;
     const arms=armies.filter(a=>a.fac===f.id);let ta=0,tg=0;arms.forEach(a=>ta+=sum(a.t));own.forEach(p=>tg+=sum(p.gar));
     g-=(ta+tg)/100*0.8;fd-=ta/100*1.5+tg/200;
@@ -631,10 +718,12 @@ function upkeep(){
     const conn=connected(f.id);
     for(const a of arms){
       if(supplied(a,conn)){a.sup=3;a.mor=clamp(a.mor+3,0,100)}
+      else if(gens[a.gen]&&gens[a.gen].trait==='둔전가'){a.sup=Math.max(a.sup,1)}
       else{a.sup--;if(a.sup<0){a.sup=0;applyLoss(a.t,sum(a.t)*.1);a.mor=clamp(a.mor-10,0,100);if(f.isPlayer)log(`🥶 ${gname(gens[a.gen])} 군단이 보급이 끊겨 병력을 잃고 있다! (보급 명령 필요)`)}
         if(isWinter(month)){applyLoss(a.t,sum(a.t)*.05)}}
     }
     for(const p of own){if(p.order<60)p.order++;}
+    capitalTick(f,own);
   }
   cleanupArmies();
   // 외교 관계 변화
@@ -647,7 +736,7 @@ function upkeep(){
   // 장수 충성
   for(const g of gens){if(g.status!=='active'||g.fac<0)continue;const f=facs[g.fac];
     let dl=RI(-2,1);if(g.amb>70)dl-=1;const rank=facs.filter(x=>x.alive).sort((x,y)=>facPower(y.id)-facPower(x.id)).findIndex(x=>x.id===f.id);
-    if(rank===0)dl+=1;if(rank>=3)dl-=1;g.loy=clamp(g.loy+dl,0,100);
+    if(rank===0)dl+=1;if(rank>=3)dl-=1;g.loy=clamp(g.loy+dl,g.trait==='충신'?50:0,100);
     if(g.loy<30&&Math.random()<((30-g.loy)/100+g.amb/400)*0.5)generalBetrays(g);
   }
   // 반란
@@ -657,6 +746,7 @@ function upkeep(){
   const neutrals=provs.filter(p=>p.owner===-1);
   if(turn>4&&facs.filter(f=>f.alive).length<9&&Math.random()<(neutrals.length?0.05:0.02)){
     const p=neutrals.length?pick(neutrals):null;if(p)risingFaction(p)}
+  legendTick();
   // 재야 인재
   if(Math.random()<.09){let g=gens.find(x=>x.status==='wander');if(!g||Math.random()<.4)g=makeGen(-1,RI(-5,10));
     const price=Math.round((g.war+g.int+g.pol)*1.4/10)*10;
@@ -779,7 +869,9 @@ function renderMap(){
     s+=`<polygon class="ov" points="${hexPts(x,y)}" fill="transparent"/>`;
     if(TERR[p.terr].icon)s+=`<text x="${x+15}" y="${y-2}" font-size="13" text-anchor="middle" opacity=".85" pointer-events="none">${TERR[p.terr].icon}</text>`;
     const isCap=f&&f.cap===p.id;
-    s+=`<text x="${x}" y="${y-13}" font-size="11" font-weight="700" text-anchor="middle" fill="#fff" stroke="#000" stroke-width="2.5" paint-order="stroke" pointer-events="none">${isCap?'★':''}${p.name}</text>`;
+    s+=`<text x="${x}" y="${y-13}" font-size="11" font-weight="700" text-anchor="middle" fill="#fff" stroke="#000" stroke-width="2.5" paint-order="stroke" pointer-events="none">${isCap?(f.capTemp?'☆':'★'):''}${p.name}</text>`;
+    if(p.spec)s+=`<text x="${x-15}" y="${y-1}" font-size="12" text-anchor="middle" pointer-events="none">${SPECS[p.spec].icon}</text>`;
+    const lgd=legendAt(p.id);if(lgd)s+=`<circle cx="${x}" cy="${y}" r="${HS-5}" fill="none" stroke="#ffe066" stroke-width="3.5" pointer-events="none"><animate attributeName="stroke-opacity" values="1;.15;1" dur="1.4s" repeatCount="indefinite"/></circle><text x="${x+16}" y="${y+30}" font-size="15" text-anchor="middle" pointer-events="none">🌟</text>`;
     // 군단 깃발
     const grp={};for(const ar of armiesIn(p.id)){(grp[ar.fac]=grp[ar.fac]||[]).push(ar)}
     const keys=Object.keys(grp);
@@ -808,12 +900,21 @@ function compStr(t){return TYPES.filter(k=>t[k]>0).map(k=>`${UT[k].icon}${fmt(t[
 function renderPanel(){
   const el=document.getElementById('pcard');if(selP==null){el.innerHTML='<span class="mut">영토를 선택하세요.</span>';return}
   const p=provs[selP],mine=p.owner===ME,f=p.owner>=0?facs[p.owner]:null;
-  let h=`<div class="big">${f&&f.cap===p.id?'★ ':''}${p.name} <span style="font-size:13px">${fname(p.owner)}</span></div>
+  const isCap=f&&f.cap===p.id;
+  let h=`<div class="big">${isCap?(f.capTemp?'☆ ':'★ '):''}${p.name} <span style="font-size:13px">${fname(p.owner)}</span></div>
+  ${isCap?`<span class="tag" style="background:${f.capTemp?'#ff5a5a33':'#ffe06633'}">${f.capTemp?'☆ 임시 수도 (효과 없음)':'🏯 수도 — 주변 자동 성장 · 민심 50 유지'}</span>`:''}
+  ${p.spec?`<span class="tag" style="background:#9cc8ff22" title="${SPECS[p.spec].d}">${SPECS[p.spec].icon} 명당: ${SPECS[p.spec].n} — ${SPECS[p.spec].d}</span><br>`:''}
   <span class="tag">${TERR[p.terr].icon||'🌾'} ${TERR[p.terr].n} · 방어 ×${TERR[p.terr].def}</span>${p.owner>=0&&p.owner!==ME?`<span class="tag">${STATE_N[dip(ME,p.owner).state]} · 관계 ${dip(ME,p.owner).rel}</span>`:''}
   <div class="grid2" style="margin-top:6px;font-size:12.5px">
    <div>🌾 농업 ${p.agri}${barH(p.agri,'#9be37b')}</div><div>💰 상업 ${p.comm}${barH(p.comm,'#ffc940')}</div>
    <div>🧱 성벽 ${p.wall}${barH(p.wall,'#b9a98a')}</div><div>❤️ 민심 ${p.order}${barH(p.order,p.order<30?'#ff5a5a':'#ff9ec7')}</div></div>
   <div style="font-size:13px">🛡️ 수비병 ${fmt(sum(p.gar))} <span class="mut">${compStr(p.gar)}</span></div>`;
+  const lg=legendAt(p.id);
+  if(lg)h+=`<div class="army" style="border-color:#ffe066;background:#3a3420"><div class="big" style="font-size:15px">🌟 전설의 인재 ${lg.name}</div>
+    <div style="font-size:12.5px">무력 ${lg.war} · 지력 ${lg.int} · 정치 ${lg.pol} · ✨<b>${lg.trait}</b><br><span class="mut">${TRAITS[lg.trait]} · ${lg.timer}턴 뒤 이웃 땅으로 이동</span></div>
+    ${mine&&!over?`<div class="grid2"><button class="sm grn" ${lg.tried===turn||facs[ME].gold<500?'disabled':''} onclick="scoutLegend(${lg.id})">🤝 스카우트 제안 <span class="g">500</span></button><span class="mut" style="font-size:12px;align-self:center">성공률 ${Math.round(scoutChance(lg)*100)}%${lg.tried===turn?' · 이번 턴 시도함':''}</span></div>`
+      :p.owner<0?'<div style="font-size:12px;color:#ffd27a;margin-top:4px">⚠️ 이 땅을 공격하면 인재가 방어를 지휘합니다 (방어력 +30%). 이기면 인재가 합류할 수도 있어요.</div>':'<div class="mut" style="font-size:12px;margin-top:4px">이 땅의 주인이 스카우트를 시도할 수 있습니다.</div>'}</div>`;
+  if(mine&&!over&&(!isCap||f.capTemp))h+=`<div class="grid2" style="margin-top:8px"><button class="org" onclick="askCapital(${p.id})">🏯 수도 ${f.capTemp?'재건':'이전'} <span class="g">${capCost(f)}</span></button><span class="mut" style="font-size:12px;align-self:center">${p.spec?'명당! 수도로 삼으면 특화 효과':'수도 효과: 주변 자동 성장'}</span></div>`;
   if(mine&&!over){
     const dis=p.acted?'disabled':'';
     h+=`<h3 style="margin-top:10px">🏛️ 내정 ${p.acted?'<span class="mut">(이번 턴 완료)</span>':'<span class="mut">(영토당 턴 1회)</span>'}</h3><div class="grid2">
@@ -887,8 +988,8 @@ function openBattle(B,role,onDone){BT={B,role,onDone};if(B.result)finishBattle(B
 function planRound(){
   const B=BT.B,enemy=BT.role==='A'?'D':'A';BT.plan=aiTactic(B,enemy);
   const me=BT.role==='A'?B.A:B.D,op=BT.role==='A'?B.D:B.A;
-  const c=clamp(.35+(me.gen.int-50)/100-(B.weather==='fog'?.2:0),.1,.9);
-  if(Math.random()<c){let shown=BT.plan;if(op.gen.int>me.gen.int+15&&Math.random()<.35)shown=pick(['charge','wall','volley'].filter(t=>t!==BT.plan));
+  const c=me.gen.trait==='와룡'?1:clamp(.35+(me.gen.int-50)/100-(B.weather==='fog'?.2:0),.1,.9);
+  if(Math.random()<c){let shown=BT.plan;if(me.gen.trait!=='와룡'&&op.gen.int>me.gen.int+15&&Math.random()<.35)shown=pick(['charge','wall','volley'].filter(t=>t!==BT.plan));
     BT.scout=`🔭 정찰 보고: 적이 <b>${tacName(shown)}</b>을(를) 준비하는 듯합니다.${op.gen.int>me.gen.int+15?' <span class="mut">(적장은 꾀가 많아 속임수일 수도…)</span>':''}`}
   else BT.scout='🔭 정찰 보고: 적의 움직임을 파악하지 못했습니다.';
 }
@@ -1006,7 +1107,7 @@ function openBribe(fid){
      return `<tr><td><b>${g.name}</b></td><td>${g.war}/${g.int}/${g.pol}</td><td>${g.loy}</td><td>${a?fmt(sum(a.t))+' 군단':'-'}</td><td>${Math.round(p*100)}%</td><td><button class="sm org" ${facs[ME].gold<300||facs[ME].dipActed[fid]?'disabled':''} onclick="doBribe(${g.id},${fid})">매수</button></td></tr>`}).join('')}</table>
    <div class="btns"><button onclick="openDiplo()">← 외교로</button></div>`);
 }
-function bribeChance(g,bestInt){return clamp((75-g.loy)/100+(bestInt-50)/200,0.03,0.8)*(g.army!=null?0.7:1)}
+function bribeChance(g,bestInt){if(g.trait==='충신')return 0.02;return clamp((75-g.loy)/100+(bestInt-50)/200,0.03,0.8)*(g.army!=null?0.7:1)}
 function doBribe(gid,fid){
   const g=gens[gid],me=facs[ME];if(me.gold<300)return;me.gold-=300;me.dipActed[fid]=true;
   const bestInt=Math.max(30,...gens.filter(x=>x.fac===ME&&x.status==='active').map(x=>x.int));
@@ -1042,6 +1143,9 @@ function openHelp(first){
    <li><b>보급</b> — 도읍과 이어진 땅에서만 보급. 끊기면 🚚보급대를 보내세요. 겨울은 혹독, 가을엔 추수!</li>
    <li><b>외교</b> — 선물·교역·군량 거래·휴전·동맹·공물·적 장수 매수. 휴전을 깨면 배신자.</li>
    <li><b>격변</b> — 충성 낮은 장수는 이적·독립, 민심 낮은 땅엔 민란, 재야엔 신흥 세력이 일어나요.</li>
+   <li><b>🏯 수도</b> — 수도와 맞닿은 내 땅은 매 턴 저절로 성장하고, 수도 민심은 50 아래로 안 떨어져요. 수도 이전은 금 ${CAP_COST}. 함락되면 국고 30%·민심·충성을 잃고 임시 수도가 돼요(재건 금 ${CAP_REBUILD}).</li>
+   <li><b>명당</b> — 지도의 🌾곡창 💰상도 🏰요새 ⚔️병영 🎐명승 땅은 개발 효과가 크고, 수도로 삼으면 특별한 효과가 있어요.</li>
+   <li><b>🌟 전설의 인재</b> — 무력이나 지력 95 이상의 인재가 나타나 3턴마다 옮겨 다녀요. 내 땅에 오면 스카우트! 중립 땅에선 방어를 지휘해요.</li>
   </ul>
   <div class="btns"><button class="pri" onclick="closeModal()">${first?'출정하라!':'닫기'}</button></div>`);
 }
