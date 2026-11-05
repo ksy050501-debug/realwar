@@ -311,10 +311,13 @@ function pickWeather(){const r=Math.random();
   return r<.15?'rain':r<.35?'fog':'clear';}
 function siegeWall(A,p){let cut=Math.min(1,(A.t.sie||0)/1500);if(A.gen.trait==='공성가')cut=Math.min(1,cut+.5);return Math.round(p.wall*(1-cut))}
 const helpersFor=(a,p)=>armies.filter(x=>x!==a&&x.fac===a.fac&&!x.acted&&provs[x.prov].nb.includes(p.id));
+function defendersOf(p,af){if(p.owner<0)return [];return armies.filter(a=>a.prov===p.id&&(a.fac===p.owner||(a.fac!==af&&isAlly(a.fac,p.owner)&&!isAlly(a.fac,af)&&dip(a.fac,af).state!=='truce')))}
 function prepBattle(a,p,surprise,extra){
   const af=a.fac,old=p.owner;
   if(old>=0){const d=dip(af,old);if(d.state==='truce')betray(af,old);if(d.state!=='war')declareWar(af,old,true)}
-  const defArmies=old>=0?armiesIn(p.id,old):[];
+  const defArmies=defendersOf(p,af);
+  const allies=defArmies.filter(x=>x.fac!==old);
+  for(const fid of [...new Set(allies.map(x=>x.fac))]){if(dip(fid,af).state!=='war'){const d=dip(fid,af);d.state='war';d.trade=false;d.truce=0;addRel(fid,af,-25);log(`🛡️ ${fname(fid)}이(가) 동맹 ${fname(old)}을(를) 지키기 위해 ${fname(af)}과(와) 전쟁에 들어갔다!`)}}
   const atk=[a,...(extra||[]).filter(x=>x!==a&&armies.includes(x)&&!x.acted&&x.fac===af)];
   const A=makeSide(atk,p,false),D=makeSide(defArmies,p,true);
   D.wall=siegeWall(A,p);
@@ -323,6 +326,8 @@ function prepBattle(a,p,surprise,extra){
     legend:lg&&old===-1?lg:null,ambush:!!p.ambush,duel:false,compA:{...A.t},compD:{...D.t},gA:A.gen.name,gD:D.gen.name,last:{lA:0,lD:0}};
   p.ambush=false;
   if(atk.length>1)B.lines.push(`🤝 <b>합동 공격!</b> ${atk.map(x=>gens[x.gen].name).join(' · ')} 군단이 힘을 합쳤다. (총지휘 ${A.gen.name})`);
+  if(allies.length)B.lines.push(`🛡️ <b>동맹 원군 참전!</b> ${allies.map(x=>fname(x.fac)+' '+gens[x.gen].name).join(' · ')} 군단(${fmt(allies.reduce((t,x)=>t+sum(x.t),0))})이 함께 방어한다.`);
+  B.allies=allies;
   B.lines.push(`${WEATHER[B.weather].icon} 날씨: ${WEATHER[B.weather].n} — ${WEATHER[B.weather].d}`);
   if(B.legend)B.lines.push(`🌟 이 땅에 머물던 전설의 인재 <b>${B.legend.name}</b>이(가) 백성들을 이끌고 방어를 지휘한다! (방어력 +30%)`);
   if(B.iD===0){B.result='att';B.lines.push('적이 성을 비우고 달아났다!');return B}
@@ -401,7 +406,8 @@ function finishBattle(B){
     B.atk.forEach(x=>x.exp=clamp(x.exp+12,0,100));if(gA&&gA.id!=null&&Math.random()<.3)gA.war=Math.min(99,gA.war+1);
     const pow=T0();
     for(const x of defArmies){if(!armies.includes(x))continue;
-      const back=p.nb.map(i=>provs[i]).find(q=>q.owner===x.fac&&armiesIn(q.id,x.fac).length<3);
+      let back=p.nb.map(i=>provs[i]).find(q=>q.owner===x.fac&&armiesIn(q.id,x.fac).length<3);
+      if(!back&&x.fac!==old&&sum(x.t)>200){const dd=bfs(p.id);back=provs.filter(q=>q.owner===x.fac).sort((a,b)=>dd[a.id]-dd[b.id])[0];if(back){applyLoss(x.t,sum(x.t)*.15)}}
       if(back&&sum(x.t)>200){x.prov=back.id;applyLoss(x.t,sum(x.t)*(B.retreated?.1:.2));x.mor=clamp(x.mor-15,5,100)}
       else{for(const k of TYPES)pow[k]+=Math.round(x.t[k]*.4);const cg=destroyArmy(x,af);if(cg)rep.captured.push(cg)}}
     for(const k of TYPES)pow[k]+=Math.round(p.gar[k]*.4);rep.absorbed=sum(pow);
@@ -410,7 +416,7 @@ function finishBattle(B){
     for(const x of B.atk)if(armies.includes(x)&&armiesIn(p.id,af).length<3)x.prov=p.id;
     if(old>=0){addRel(af,old,-15);onProvinceLost(old,p,af)}
     if(B.legend){const lg=B.legend;if(Math.random()<.35){joinLegend(lg,af,'전투 끝에 감복하여')}else{const nb=pick(p.nb);lg.loc=nb;log(`🌟 ${gname(lg)}이(가) ${provs[nb].name}(으)로 몸을 피했다.`)}}
-  }else{B.atk.forEach(x=>x.exp=clamp(x.exp+6,0,100));defArmies.forEach(x=>x.exp=clamp(x.exp+8,0,100))}
+  }else{B.atk.forEach(x=>x.exp=clamp(x.exp+6,0,100));defArmies.forEach(x=>x.exp=clamp(x.exp+8,0,100));for(const fid of new Set((B.allies||[]).map(x=>x.fac)))if(old>=0)addRel(fid,old,6)}
   B.atk.forEach(x=>x.acted=true);cleanupArmies();
   const verb=B.surprise?(B.sOK?'기습 성공!':'기습 실패,'):'';
   log(`⚔️ ${fname(af)} ${gname(gA)}이 ${fname(old)} <b>${p.name}</b> 공격 ${verb} → ${B.result==='att'?'<b>점령</b>'+(rep.absorbed?` · 적병 ${fmt(rep.absorbed)} 흡수`:''):'격퇴당함'} (손실 ${fmt(B.iA-sum(A.t))} : ${fmt(B.iD-sum(D.t))})`);
@@ -657,7 +663,7 @@ function aiArmy(f,a){
       if(d.state==='neutral'){const ok=(q.owner===f.target&&turn>=4&&Math.random()<.35*agg)||(d.rel<-20&&Math.random()<0.2*agg);if(!ok)continue;}
       if(d.state==='war')thr=q.owner===f.target?1.05:1.15;
     }else thr=1.15;
-    const dl=q.owner>=0?armiesIn(q.id,q.owner):[];let A=makeSide([a],q,false),D=makeSide(dl,q,true);
+    const dl=defendersOf(q,f.id);let A=makeSide([a],q,false),D=makeSide(dl,q,true);
     let ratio=eff(A,D.t)/Math.max(1,eff(D,A.t)),hs=[];
     if(ratio<=thr){const h=helpersFor(a,q);if(h.length){A=makeSide([a,...h],q,false);D=makeSide(dl,q,true);const r2=eff(A,D.t)/Math.max(1,eff(D,A.t));if(r2>thr){ratio=r2;hs=h}}}
     const v=ratio+(q.owner===-1?.1:0)+(q.owner>=0&&q.owner===f.target?.5:0)+(q.spec?.35:0)+(q.owner>=0&&facs[q.owner].cap===q.id?.4:0)-hs.length*.1;
@@ -961,7 +967,7 @@ function expelForeign(){
 
 /* ================= 투항 권유 ================= */
 function surrenderChance(a,p,extra,gold=0){
-  const A=makeSide([a,...(extra||[])],p,false),D=makeSide(p.owner>=0?armiesIn(p.id,p.owner):[],p,true);D.wall=siegeWall(A,p);
+  const A=makeSide([a,...(extra||[])],p,false),D=makeSide(defendersOf(p,a.fac),p,true);D.wall=siegeWall(A,p);
   const r=eff(A,D.t)/Math.max(1,eff(D,A.t));
   let c=clamp((r-1)*0.3,0,0.55);
   const around=p.nb.filter(i=>provs[i].owner===a.fac).length/Math.max(1,p.nb.length);c+=around*0.3;
@@ -1239,7 +1245,7 @@ function nextEvent(){
     const ex=(e.battle.ex||[]).map(id=>armies.find(x=>x.id===id)).filter(x=>x&&x.fac===a.fac&&provs[x.prov].nb.includes(p.id));ex.forEach(x=>x.acted=false);
     const B=prepBattle(a,p,e.battle.sur,ex);
     showModal(`<h2>🚨 적의 침공!</h2><p>${fname(a.fac)}의 <b>${B.atk.map(x=>gens[x.gen].name).join(' · ')}</b> 군단(${fmt(B.iA)})이${B.atk.length>1?' <b>합동으로</b>':''} 우리 <b>${p.name}</b>(으)로 쳐들어왔습니다!</p>
-      <p>수비 병력: ${fmt(B.iD)} ${B.surprise?(B.sOK?'<br><b style="color:#ff8a8a">⚡ 적의 기습에 당했습니다!</b>':'<br>⚡ 적의 기습을 미리 간파했습니다!'):''}${B.ambush?'<br>🪤 설치해 둔 매복이 발동합니다!':''}</p>
+      <p>수비 병력: ${fmt(B.iD)}${B.allies&&B.allies.length?` <span style="color:#7dff9a">(🛡️ 동맹 원군 ${B.allies.map(x=>facs[x.fac].name).join('·')} 포함)</span>`:''} ${B.surprise?(B.sOK?'<br><b style="color:#ff8a8a">⚡ 적의 기습에 당했습니다!</b>':'<br>⚡ 적의 기습을 미리 간파했습니다!'):''}${B.ambush?'<br>🪤 설치해 둔 매복이 발동합니다!':''}</p>
       <div class="btns"><button class="pri" id="eb0">⚔️ 직접 지휘한다</button></div>`);
     document.getElementById('eb0').onclick=()=>openBattle(B,'D',()=>{checkVictory();renderAll();nextEvent()});
     return}
@@ -1407,7 +1413,8 @@ function openAttack(a,p,keep){
   if(!keep)SUR_GOLD=0;SUR_GOLD=Math.min(SUR_GOLD,facs[ME].gold);
   const hs=helpersFor(a,p);if(!keep)ATK_JOIN=hs.map(x=>x.id);ATK_JOIN=ATK_JOIN.filter(id=>hs.some(x=>x.id===id));
   const list=[a,...joinList()];
-  const A=makeSide(list,p,false),D=makeSide(p.owner>=0?armiesIn(p.id,p.owner):[],p,true);D.wall=siegeWall(A,p);
+  const A=makeSide(list,p,false),D=makeSide(defendersOf(p,ME),p,true);D.wall=siegeWall(A,p);
+  const allyDef=D.list.filter(x=>x.fac!==p.owner);
   const eA=eff(A,D.t),eD=eff(D,A.t),sc=surpriseChance(A,D);
   let warn='';
   if(p.owner>=0){const d=dip(ME,p.owner);
@@ -1426,6 +1433,7 @@ function openAttack(a,p,keep){
     ${joinHTML}
     <p class="mut" style="font-size:13px">전투는 최대 5합. 매 합마다 전술을 골라 직접 지휘합니다.</p>
     <p>⚡ <b>기습</b> 성공률 <b>${Math.round(sc*100)}%</b> — 성공하면 1합 피해 1.8배·적 사기 급락, 실패하면 역습당합니다.</p>
+    ${allyDef.length?`<p style="color:#ffd27a">🛡️ 이 땅에는 ${[...new Set(allyDef.map(x=>fname(x.fac)))].join('·')}의 동맹 원군 ${fmt(allyDef.reduce((t,x)=>t+sum(x.t),0))}명이 함께 지키고 있습니다. 공격하면 그 나라와도 전쟁 상태가 됩니다.</p>`:''}
     ${warn}
     <div class="army" style="border-color:#9cc8ff"><b>🏳️ 투항 권유</b> — 싸우지 않고 사신을 보냅니다. 성공률 <b style="color:#9cc8ff" id="schance">${Math.round(surrenderChance(a,p,joinList(),SUR_GOLD)*100)}%</b>
       <div style="font-size:12.5px;margin-top:4px">💰 회유금 <b class="g" id="sgold">${SUR_GOLD}</b> <input type="range" min="0" max="${Math.min(facs[ME].gold,8000)}" step="100" value="${Math.min(SUR_GOLD,facs[ME].gold)}" style="width:55%;vertical-align:middle" oninput="SUR_GOLD=+this.value;document.getElementById('sgold').textContent=this.value;document.getElementById('schance').textContent=Math.round(surrenderChance(armies.find(x=>x.id===${a.id}),provs[${p.id}],joinList(),SUR_GOLD)*100)+'%'"> <span class="mut">(성공 시 전액, 실패 시 절반 지출)</span></div>
@@ -1605,6 +1613,7 @@ function openHelp(first){
    <li><b>외교</b> — 선물·교역·군량 거래·휴전·동맹·공물·적 장수 매수. 휴전을 깨면 배신자.</li>
    <li><b>격변</b> — 충성 낮은 장수는 이적·독립, 민심 낮은 땅엔 민란, 재야엔 신흥 세력이 일어나요.</li>
    <li><b>🚚 수비병 이동</b> — 장수 없이도 수비병을 맞닿은 내 땅으로 한 턴에 한 칸씩 옮길 수 있어요. 일괄 내정에서 후방 병력을 한꺼번에 전선 쪽으로 밀어 줄 수도 있어요.</li>
+   <li><b>🛡️ 동맹 원군</b> — 동맹군이 머무는 땅이 공격받으면 동맹군도 함께 방어해요(동맹국이 공격자와 휴전·동맹이면 제외). 참전한 동맹국은 공격자와 전쟁 상태가 돼요.</li>
    <li><b>🚷 동맹 파기</b> — 동맹이 깨지면 상대 땅에 있던 군단은 가장 가까운 자기 땅으로 강제 귀환하고 병력 10%가 이탈해요.</li>
    <li><b>🏛️ 태수</b> — 군단을 맡지 않은 장수를 영토의 태수로 앉혀요. 정치 60 이상이면 매 턴 농업·상업이 저절로 오르고 민심이 떨어지지 않아요(징병은 안 함). 정치 45 미만이면 오히려 쇠퇴하고 민심이 떨어져 민란이 나요. 정치가 높을수록 야망도 커서, 충성 30 이하가 3턴 이어지면 맞닿은 우리 땅을 모두 끌어모아 독립해요. 충신 특기 + 높은 정치 = 최고의 태수!</li>
    <li><b>📋 일괄 내정</b> — 상단 [📋 일괄 내정]을 켜고 내 땅 여러 곳을 눌러(또는 '전선만', '후방만' 버튼) 한꺼번에 개발·징병하세요. 수도 레벨이 오르면 전국 개발 비용과 효과가 함께 커져요.</li>
