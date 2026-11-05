@@ -166,7 +166,9 @@ const shuffle=a=>{for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()
 let provs,seaCells,facs,gens,armies,dips,year,month,turn,events,selP,selA,over,logLines,uidA,cellAt,AUTO=false;
 const ME=0;
 const season=m=>m>=3&&m<=5?'봄':m>=6&&m<=8?'여름':m>=9&&m<=11?'가을':'겨울';
-const seasonFood=m=>(m===12||m<=2)?0.4:(m===9||m===10)?1.7:1.0;
+const seasonFood=m=>(m===12||m<=2)?0.6:(m===9||m===10)?1.7:1.0;
+const DEVCAP={1:100,2:120,3:140,4:170,5:200};
+const devCap=f=>f?DEVCAP[f.capTemp?1:(f.capLv||1)]:100;
 const isWinter=m=>m===12||m<=2;
 
 function nbCells(q,r){
@@ -504,8 +506,9 @@ function provAction(fid,p,kind,type){
   const cost=devCost(f,kind),G=devMul(f).g;
   if(cost&&f.gold<cost)return '금이 부족합니다.';
   const mul=sp=>(p.spec===sp?1.5:1)*G;
-  if(kind==='agri'){if(p.agri>=100)return '더 개발할 수 없습니다.';f.gold-=cost;p.agri=Math.min(100,p.agri+Math.round(RI(5,8)*mul('granary')))}
-  else if(kind==='comm'){if(p.comm>=100)return '더 개발할 수 없습니다.';f.gold-=cost;p.comm=Math.min(100,p.comm+Math.round(RI(5,8)*mul('market')))}
+  const CP=devCap(f);
+  if(kind==='agri'){if(p.agri>=CP)return `농업 상한(${CP})입니다. 수도를 강화하면 상한이 올라가요.`;f.gold-=cost;p.agri=Math.min(CP,p.agri+Math.round(RI(5,8)*mul('granary')))}
+  else if(kind==='comm'){if(p.comm>=CP)return `상업 상한(${CP})입니다. 수도를 강화하면 상한이 올라가요.`;f.gold-=cost;p.comm=Math.min(CP,p.comm+Math.round(RI(5,8)*mul('market')))}
   else if(kind==='wall'){if(p.wall>=100)return '성벽이 최고 수준입니다.';f.gold-=cost;p.wall=Math.min(100,p.wall+Math.round(12*mul('fortress')))}
   else if(kind==='ambush'){if(p.ambush)return '이미 매복이 있습니다.';if(f.gold<80)return '금이 부족합니다.';f.gold-=80;p.ambush=true}
   else if(kind==='relief'){const rc=reliefCost(f);if(f.food<rc)return '군량이 부족합니다.';f.food-=rc;p.order=Math.min(100,p.order+Math.round(15*G*(p.spec==='shrine'?1.5:1)))}
@@ -553,11 +556,17 @@ function clickProv(id){
 function nextArmy(){const r=armies.filter(x=>x.fac===ME&&!x.acted);if(!r.length)return;const i=r.findIndex(x=>x.id===selA);const a=r[(i+1)%r.length];selA=a.id;selP=a.prov;renderAll()}
 function selectArmy(id){selA=id;pendingMove=null;const a=armies.find(x=>x.id===id);if(a)selP=a.prov;renderAll()}
 function doProv(kind,type){const p=provs[selP];const err=provAction(ME,p,kind,type);if(err)toast(err);else{const lbl={agri:'농업 개발',comm:'상업 개발',wall:'성벽 보수',relief:'구휼',recruit:'징병',ambush:'매복 설치'}[kind];log(`🏛️ ${p.name}: ${lbl}${type?' ('+UT[type].n+' 500)':''}`)}renderAll()}
+const farmYield=a=>Math.round(sum(a.t)/100*2.5*(gens[a.gen]&&gens[a.gen].trait==='둔전가'?1.5:1));
+function doFarm(a){const p=provs[a.prov],f=facs[a.fac];if(p.owner!==a.fac||a.moved||a.acted)return 0;const y=farmYield(a);f.food+=y;if(f.farmT!==turn){f.farmT=turn;f.farmFood=0}f.farmFood+=y;
+  if(p.agri<devCap(f)&&Math.random()<.5)p.agri++;a.mor=clamp(a.mor+5,0,100);a.acted=true;a.farmed=turn;return y}
+function bulkFarm(){let n=0,y=0;for(const a of armies.filter(x=>x.fac===ME&&!x.acted&&!x.moved)){const p=provs[a.prov];if(p.owner!==ME||isFrontier(p))continue;const r=doFarm(a);if(r){n++;y+=r}}
+  if(n){log(`🌾 후방 군단 ${n}개 일괄 둔전 (군량 +${y})`);toast(`${n}개 군단 둔전 · 군량 +${y}`)}else toast('둔전할 수 있는 후방 군단이 없습니다.');renderAll()}
 function armyAct(id,kind){
   const a=armies.find(x=>x.id===id);if(!a||a.acted)return;const f=facs[ME],p=provs[a.prov];
   if((kind==='train'||kind==='rest')&&a.moved)return toast('이동한 턴에는 훈련·휴식을 할 수 없습니다.');
   if(kind==='train'){if(p.owner!==ME)return toast('내 영토에서만 훈련할 수 있습니다.');if(f.gold<60)return toast('금이 부족합니다.');f.gold-=60;a.train=clamp(a.train+12,0,100);a.skill[p.terr]=clamp(a.skill[p.terr]+20,0,100);a.acted=true;log(`🎯 ${gname(gens[a.gen])} 군단이 ${p.name}에서 ${TERR[p.terr].n} 훈련 (훈련도 ${a.train}, ${TERR[p.terr].n} 숙련 ${a.skill[p.terr]})`)}
   else if(kind==='rest'){a.mor=clamp(a.mor+25,0,100);a.acted=true}
+  else if(kind==='farm'){const r=doFarm(a);if(!r)return toast('내 영토에서, 이동하지 않은 군단만 둔전할 수 있습니다.');log(`🌾 ${gname(gens[a.gen])} 군단이 ${p.name}에서 둔전 (군량 +${r})`)}
   else if(kind==='wait'){a.acted=true;selA=null}
   else if(kind==='absorb'){if(p.owner!==ME)return;const take=T0();for(const k of TYPES){const keep=k==='inf'?300:0;const n=Math.max(0,p.gar[k]-keep);take[k]=n;p.gar[k]-=n}
     if(sum(take)===0)return toast('합류할 수비병이 없습니다.');const n0=sum(a.t),n1=sum(take);a.train=Math.round((a.train*n0+30*n1)/(n0+n1));for(const k of TYPES)a.t[k]+=take[k];a.acted=true;log(`➕ ${gname(gens[a.gen])} 군단에 수비병 ${fmt(n1)} 합류`)}
@@ -693,6 +702,7 @@ function aiArmy(f,a){
     doAttack(a,best.q,sur,best.hs);return}
   if(p.owner===f.id&&sum(p.gar)>700&&sum(a.t)<6000){const t=T0();for(const k of TYPES){const keep=k==='inf'?(p.id===f.cap?500:300):0;t[k]=Math.max(0,p.gar[k]-keep);p.gar[k]-=t[k]}if(sum(t)>0){for(const k of TYPES)a.t[k]+=t[k];a.acted=true;return}}
   if(a.mor<55&&p.owner===f.id){a.mor=clamp(a.mor+25,0,100);a.acted=true;return}
+  if(p.owner===f.id&&!a.moved&&!p.nb.some(i=>provs[i].owner!==f.id&&!isAlly(f.id,provs[i].owner))&&econ(f,month).fd<0&&Math.random()<.7){doFarm(a);return}
   const enemyNear=p.nb.some(i=>provs[i].owner!==f.id&&!isAlly(f.id,provs[i].owner));
   if(a.train<45&&!enemyNear&&p.owner===f.id&&f.gold>120){f.gold-=60;a.train+=12;a.skill[p.terr]=clamp(a.skill[p.terr]+20,0,100);a.acted=true;return}
   // 목표국 전선으로 집결
@@ -720,7 +730,7 @@ function bulkPick(kind){
   BULK=new Set(pick.map(p=>p.id));renderAll();
 }
 function bulkEligible(kind,type){const f=facs[ME];return [...BULK].map(i=>provs[i]).filter(p=>p.owner===ME&&!p.acted&&(
-  kind==='agri'?p.agri<100:kind==='comm'?p.comm<100:kind==='wall'?p.wall<100:kind==='ambush'?!p.ambush:kind==='recruit'?canRecruit(p,type)&&p.order>=25:true))}
+  kind==='agri'?p.agri<devCap(f):kind==='comm'?p.comm<devCap(f):kind==='wall'?p.wall<100:kind==='ambush'?!p.ambush:kind==='recruit'?canRecruit(p,type)&&p.order>=25:true))}
 function bulkCost(kind,type){const f=facs[ME],n=bulkEligible(kind,type).length;
   if(kind==='relief')return {n,txt:`🌾${n*reliefCost(f)}`};
   const c=kind==='recruit'?UT[type].cost:kind==='ambush'?80:devCost(f,kind);return {n,txt:`💰${n*c}`}}
@@ -743,6 +753,7 @@ function renderBulkPanel(){
    <h3 style="margin-top:10px">🏛️ 선택한 땅에 한꺼번에 <span class="mut">(개발 비용 ×${devMul(f).c} · 효과 ×${devMul(f).g})</span></h3>
    <div class="grid2">${btn('agri','🌾 농업')}${btn('comm','💰 상업')}${btn('wall','🧱 성벽')}${btn('relief','❤️ 구휼')}${btn('ambush','🪤 매복')}</div>
    <h3 style="margin-top:10px">🚚 수비병 이동</h3><div class="grid2"><button onclick="bulkPush()" style="grid-column:span 2">🚚 선택한 후방 땅의 수비병을 전선 쪽으로 한 칸 <span class="mut" style="font-size:11px">(창병 300 남김)</span></button></div>
+   <div class="grid2" style="margin-top:6px"><button onclick="bulkFarm()" style="grid-column:span 2">🌾 행동 안 한 후방 군단 모두 둔전 <span class="mut" style="font-size:11px">(전선 제외)</span></button></div>
    <h3 style="margin-top:10px">⚔️ 한꺼번에 징병 (곳당 500명)</h3><div class="grid2">${TYPES.map(k=>btn('recruit',UT[k].icon+' '+UT[k].n,k)).join('')}</div>
    <div style="font-size:12.5px;margin-top:8px;max-height:150px;overflow:auto">${sel.map(p=>`<span class="tag" style="${p.acted?'opacity:.45':''}">${p.name} ${p.order<=30?'❗':''}${p.acted?'✔':''}</span>`).join('')}</div>`;
 }
@@ -916,7 +927,7 @@ const sround=x=>{const f=Math.floor(x);return f+(Math.random()<x-f?1:0)};
 function validGov(p){if(p.gov==null)return null;const g=gens[p.gov];if(!g||g.gov!==p.id||g.fac!==p.owner||g.status!=='active'||g.army!=null){if(g&&g.gov===p.id)g.gov=null;p.gov=null;return null}return g}
 function govTick(f){
   for(const p of ownProvs(f.id)){const g=validGov(p);if(!g)continue;const e=govEffect(g);
-    const d=sround(Math.abs(e.dev))*Math.sign(e.dev);p.agri=clamp(p.agri+d,0,100);p.comm=clamp(p.comm+sround(Math.abs(e.dev))*Math.sign(e.dev),0,100);
+    const d=sround(Math.abs(e.dev))*Math.sign(e.dev);p.agri=clamp(p.agri+d,0,devCap(f));p.comm=clamp(p.comm+sround(Math.abs(e.dev))*Math.sign(e.dev),0,devCap(f));
     if(e.drop)p.order=clamp(p.order-sround(e.drop),0,100);
     if(e.keep){p.order=Math.max(p.order,p.govMin||0);p.govMin=p.order}}
 }
@@ -1047,8 +1058,8 @@ function capInfluence(f){if(f.capTemp||f.cap==null||provs[f.cap].owner!==f.id)re
 function capitalTick(f,own){
   if(f.capTemp||f.cap==null)return;const c=provs[f.cap];if(!c||c.owner!==f.id)return;
   const L=capL(f);c.order=Math.max(c.order,L.floor);const k=c.spec;
-  for(const q of capInfluence(f)){q.agri=Math.min(100,q.agri+L.g+(k==='granary'?1:0));q.comm=Math.min(100,q.comm+L.g+(k==='market'?1:0));if(q.order<70)q.order++}
-  c.agri=Math.min(100,c.agri+(f.capLv>1?1:0));c.comm=Math.min(100,c.comm+(f.capLv>1?1:0));
+  const CP=devCap(f);for(const q of capInfluence(f)){q.agri=Math.min(CP,q.agri+L.g+(k==='granary'?1:0));q.comm=Math.min(CP,q.comm+L.g+(k==='market'?1:0));if(q.order<70)q.order++}
+  c.agri=Math.min(CP,c.agri+(f.capLv>1?1:0));c.comm=Math.min(CP,c.comm+(f.capLv>1?1:0));
   f.guard=Math.min(L.gCap,(f.guard||0)+L.gInc);
   if(k==='fortress')c.wall=Math.min(100,c.wall+3);
   if(k==='barracks')c.gar.inf+=100;
@@ -1157,7 +1168,7 @@ function econ(f,m){
   if(!f.isPlayer){gp*=DF().inc;fp*=DF().inc}
   let gt=0;for(const o of facs)if(o.alive&&o.id!==f.id&&dip(f.id,o.id).trade)gt+=25+ownProvs(o.id).length*3;
   let ta=0,tg=0;armies.forEach(a=>{if(a.fac===f.id)ta+=sum(a.t)});own.forEach(p=>tg+=sum(p.gar));const gd=f.guard||0;
-  const pay=(ta+tg+gd)/100*0.8,fa=ta/100*1.5,fgar=(tg+gd)/200;
+  const pay=(ta+tg+gd)/100*0.8,fa=ta/100*1.2,fgar=(tg+gd)/200;
   return {gp,gt,pay,g:gp+gt-pay,fp,fa,fgar,fd:fp-fa-fgar,sm,ta,tg,gd,n:own.length}
 }
 function openEcon(){
@@ -1167,11 +1178,12 @@ function openEcon(){
    <table><tr><th></th><th>💰 금</th><th>🌾 군량</th></tr>
    <tr><td>영토 ${E.n}곳 생산</td><td>+${r(E.gp)} <span class="mut">(상업·민심)</span></td><td>+${r(E.fp)} <span class="mut">(농업 × ${sname(month)})</span></td></tr>
    <tr><td>교역 협정</td><td>+${r(E.gt)}</td><td>-</td></tr>
-   <tr><td>군단 ${fmt(E.ta)}명</td><td rowspan="2">-${r(E.pay)} <span class="mut">(녹봉: 병력 100명당 0.8)</span></td><td>-${r(E.fa)} <span class="mut">(100명당 1.5)</span></td></tr>
+   <tr><td>🌾 이번 턴 둔전 수확 <span class="mut">(이미 들어옴)</span></td><td>-</td><td>+${r(f.farmT===turn?f.farmFood||0:0)}</td></tr>
+   <tr><td>군단 ${fmt(E.ta)}명</td><td rowspan="2">-${r(E.pay)} <span class="mut">(녹봉: 병력 100명당 0.8)</span></td><td>-${r(E.fa)} <span class="mut">(100명당 1.2)</span></td></tr>
    <tr><td>수비병 ${fmt(E.tg)} + 근위대 ${fmt(E.gd)}</td><td>-${r(E.fgar)} <span class="mut">(200명당 1)</span></td></tr>
    <tr><th>이번 턴 합계</th><th style="color:${E.g>=0?'#9be37b':'#ff7a7a'}">${sg(E.g)}</th><th style="color:${E.fd>=0?'#9be37b':'#ff7a7a'}">${sg(E.fd)}</th></tr>
    <tr><td class="mut">다음 달(${sname(nm)}) 예상</td><td class="mut">${sg(E2.g)}</td><td class="mut">${sg(E2.fd)}</td></tr></table>
-   <p class="mut" style="font-size:13px">🌾 계절에 따라 수확이 달라요: 봄·여름 ×1, <b>9·10월 가을 추수 ×1.7</b>, <b>12~2월 겨울 ×0.4</b>. 군단은 수비병보다 군량을 3배 먹어요. 군량이 부족하면 쓰지 않는 군단을 해산해 수비병으로 돌리거나, 농업 개발·태수·군량 구입을 활용하세요.</p>
+   <p class="mut" style="font-size:13px">🌾 계절에 따라 수확이 달라요: 봄·여름 ×1, <b>9·10월 가을 추수 ×1.7</b>, <b>12~2월 겨울 ×0.6</b>. 군단은 수비병보다 군량을 2.4배 먹어요. 쉬는 군단은 <b>🌾 둔전</b>으로 군량을 직접 생산할 수 있어요. 수도를 강화하면 농업·상업 상한이 100→120→140→170→200으로 올라가요. 군량이 부족하면 쓰지 않는 군단을 해산해 수비병으로 돌리거나, 농업 개발·태수·군량 구입을 활용하세요.</p>
    <div class="btns"><button onclick="closeModal()">닫기</button></div>`);
 }
 /* ================= 일대기 · 천하통일 · 통일 이후 ================= */
@@ -1470,7 +1482,7 @@ function renderPanel(){
   ${p.spec?`<span class="tag" style="background:#9cc8ff22" title="${SPECS[p.spec].d}">${SPECS[p.spec].icon} 명당: ${SPECS[p.spec].n} — ${SPECS[p.spec].d}</span><br>`:''}
   <span class="tag">${TERR[p.terr].icon||'🌾'} ${TERR[p.terr].n} · 방어 ×${TERR[p.terr].def}</span>${p.owner>=0&&p.owner!==ME?`<span class="tag">${STATE_N[dip(ME,p.owner).state]} · 관계 ${dip(ME,p.owner).rel}</span>`:''}
   <div class="grid2" style="margin-top:6px;font-size:12.5px">
-   <div>🌾 농업 ${p.agri}${barH(p.agri,'#9be37b')}</div><div>💰 상업 ${p.comm}${barH(p.comm,'#ffc940')}</div>
+   <div>🌾 농업 ${p.agri}<span class="mut">/${devCap(f)}</span>${barH(Math.min(100,p.agri/devCap(f)*100),'#9be37b')}</div><div>💰 상업 ${p.comm}<span class="mut">/${devCap(f)}</span>${barH(Math.min(100,p.comm/devCap(f)*100),'#ffc940')}</div>
    <div>🧱 성벽 ${p.wall}${barH(p.wall,'#b9a98a')}</div><div ${p.order<=30?'class="blinkred"':''}>❤️ 민심 ${p.order}${p.order<=30?' ❗민란 위험':''}${barH(p.order,p.order<=30?'#ff5a5a':'#ff9ec7')}</div></div>
   <div style="font-size:13px">🛡️ 수비병 ${fmt(sum(p.gar))} <span class="mut">${compStr(p.gar)}</span></div>`;
   const lg=legendAt(p.id);
@@ -1516,6 +1528,7 @@ function renderPanel(){
         ${own&&!a.acted&&!over?`<div class="grid2">
           <button class="sm" onclick="armyAct(${a.id},'train')" ${p.owner===ME?'':'disabled'}>🎯 ${TERR[p.terr].n} 훈련 <span class="g">60</span></button>
           <button class="sm" onclick="armyAct(${a.id},'rest')">😴 휴식(사기)</button>
+          <button class="sm" onclick="armyAct(${a.id},'farm')" ${p.owner===ME&&!a.moved?'':'disabled'} title="이번 턴 행동 대신 농사를 지어 군량을 생산">🌾 둔전 <span class="f">+${farmYield(a)}</span></button>
           <button class="sm" onclick="armyAct(${a.id},'absorb')" ${p.owner===ME&&sum(p.gar)>300?'':'disabled'}>➕ 수비병 합류</button>
           <button class="sm" onclick="armyAct(${a.id},'supply')" ${sup?'disabled':''}>🚚 보급대 <span class="f">${supplyCost(a)}</span></button>
           <button class="sm" onclick="armyAct(${a.id},'disband')" ${p.owner===ME&&!a.moved?'':'disabled'}>🏳️ 해산</button>
@@ -1747,6 +1760,7 @@ function openHelp(first){
    <li><b>🛡️ 동맹 원군</b> — 동맹군이 머무는 땅이 공격받으면 동맹군도 함께 방어해요(동맹국이 공격자와 휴전·동맹이면 제외). 참전한 동맹국은 공격자와 전쟁 상태가 돼요.</li>
    <li><b>🚷 동맹 파기</b> — 동맹이 깨지면 상대 땅에 있던 군단은 가장 가까운 자기 땅으로 강제 귀환하고 병력 10%가 이탈해요.</li>
    <li><b>👑 통일 이후</b> — 천하통일 뒤에도 게임은 계속돼요. 이민족 침입·재해·반란을 이겨내고 <b>12달 연속 전국 민심 60 이상</b>을 지키면 🕊️태평성대 엔딩! 일대기는 📊세력도에서 볼 수 있어요.</li>
+   <li><b>🌾 군량</b> — 병력이 많아지면 군량이 모자라요. 쉬는 군단은 <b>🌾둔전</b>(병력 100명당 군량 +2.5)으로 직접 농사를 지을 수 있고, 수도를 강화하면 농업·상업 상한이 최대 200까지 올라가요. 상단 금·군량을 누르면 수입 내역이 나와요.</li>
    <li><b>🏛️ 태수</b> — 군단을 맡지 않은 장수를 영토의 태수로 앉혀요. 정치 60 이상이면 매 턴 농업·상업이 저절로 오르고 민심이 떨어지지 않아요(징병은 안 함). 정치 45 미만이면 오히려 쇠퇴하고 민심이 떨어져 민란이 나요. 정치가 높을수록 야망도 커서, 충성 30 이하가 3턴 이어지면 맞닿은 우리 땅을 모두 끌어모아 독립해요. 충신 특기 + 높은 정치 = 최고의 태수!</li>
    <li><b>📋 일괄 내정</b> — 상단 [📋 일괄 내정]을 켜고 내 땅 여러 곳을 눌러(또는 '전선만', '후방만' 버튼) 한꺼번에 개발·징병하세요. 수도 레벨이 오르면 전국 개발 비용과 효과가 함께 커져요.</li>
    <li><b>📊 세력도</b> — 모든 나라의 영토·금·군량·병력·수도와, 나라끼리의 전쟁·동맹 관계표를 볼 수 있어요. 외교 창에서 다른 나라에 <b>⚔️공동 공격</b>을 제안할 수도 있어요.</li>
