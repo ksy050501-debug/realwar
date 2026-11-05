@@ -817,6 +817,9 @@ function deserialize(str){
   const o=JSON.parse(str);if(!o||!o.provs)throw new Error('bad');
   provs=o.provs;seaCells=o.seaCells;facs=o.facs;gens=o.gens;armies=o.armies;dips=o.dips;year=o.year;month=o.month;turn=o.turn;uidA=o.uidA;over=!!o.over;
   CHRON=o.CHRON||[];ST=o.ST||{won:0,lost:0,killed:0,fallen:0,conq:0,surr:0,elim:0,caps:0,defWon:0,bigBattle:0};UNI=o.UNI||null;
+  if(!o.CHRON){const pct=provs.filter(q=>q.owner===ME).length/provs.length;ST.ms=[0.75,0.5,0.25,0.1].find(m=>pct>=m)||0;
+    chron('📜',`(이전 기록은 남아 있지 않다) 천하력 ${o.year}년 ${o.month}월부터 일대기를 기록하기 시작했다. 현재 영토 ${Math.round(pct*100)}%.`,true)}
+  if(over&&!UNI&&provs.every(q=>q.owner===ME)){over=false;setTimeout(()=>{unify();nextEvent()},300)}
   if(o.DIFF&&DIFFS[o.DIFF])DIFF=o.DIFF;logLines=o.logLines||[];usedNames.clear();(o.used||[]).forEach(n=>usedNames.add(n));
   cellAt={};for(const p of provs)cellAt[p.q+','+p.r]=p;
   events=[];selP=facs[ME].cap;selA=null;BULK=null;pendingMove=null;BT=null;ATK_JOIN=[];
