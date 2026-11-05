@@ -12,7 +12,7 @@ body{margin:0;background:radial-gradient(circle at 30% 0,#283046,#11141b 70%);co
 #topbar{position:sticky;top:0;z-index:8;background:#151a24ee;backdrop-filter:blur(6px);border-bottom:1px solid #ffffff12;margin-bottom:8px}
 header{display:flex;align-items:center;gap:7px;padding:8px 12px;flex-wrap:wrap}
 header button{padding:6px 9px;font-size:12.5px}
-header .chip{padding:4px 9px;font-size:13px}
+header .chip{padding:4px 8px;font-size:12.5px}
 header h1{font-size:18px}
 h1{font-size:20px;margin:0;font-weight:900;letter-spacing:-.5px}
 .chip{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:5px 12px;font-weight:700;white-space:nowrap}
@@ -88,8 +88,8 @@ select{font-family:inherit;background:#2f3850;color:var(--txt);border:1px solid 
 <div id="topbar"><header>
   <h1>🏯 천하쟁패</h1>
   <span class="chip" id="cDate"></span>
-  <span class="chip">💰 <span class="g" id="cGold"></span></span>
-  <span class="chip">🌾 <span class="f" id="cFood"></span></span>
+  <span class="chip" style="cursor:pointer" onclick="openEcon()" title="수입 내역">💰 <span class="g" id="cGold"></span> <span id="cGoldD" style="font-size:11px"></span></span>
+  <span class="chip" style="cursor:pointer" onclick="openEcon()" title="수입 내역">🌾 <span class="f" id="cFood"></span> <span id="cFoodD" style="font-size:11px"></span></span>
   <span class="chip">⚔️ <span id="cTroops"></span></span>
   <span class="chip">🗺️ <span id="cProv"></span></span>
   <div class="sp"></div>
@@ -1124,18 +1124,36 @@ function endTurn(){
   needSave=true;
   nextEvent();
 }
+function econ(f,m){
+  const own=ownProvs(f.id),sm=seasonFood(m);let gp=0,fp=0;
+  for(const p of own){gp+=p.comm*(0.6+p.order/250)*1.3;fp+=p.agri*sm}
+  if(facHasTrait(f.id,'명재상'))gp*=1.2;
+  if(!f.isPlayer){gp*=DF().inc;fp*=DF().inc}
+  let gt=0;for(const o of facs)if(o.alive&&o.id!==f.id&&dip(f.id,o.id).trade)gt+=25+ownProvs(o.id).length*3;
+  let ta=0,tg=0;armies.forEach(a=>{if(a.fac===f.id)ta+=sum(a.t)});own.forEach(p=>tg+=sum(p.gar));const gd=f.guard||0;
+  const pay=(ta+tg+gd)/100*0.8,fa=ta/100*1.5,fgar=(tg+gd)/200;
+  return {gp,gt,pay,g:gp+gt-pay,fp,fa,fgar,fd:fp-fa-fgar,sm,ta,tg,gd,n:own.length}
+}
+function openEcon(){
+  const f=facs[ME],E=econ(f,month),nm=month%12+1,E2=econ(f,nm),r=x=>Math.round(x),sg=x=>(x>=0?'+':'')+r(x);
+  const sname=m=>`${m}월 ${season(m)} ×${seasonFood(m)}`;
+  showModal(`<h2>📈 우리 나라 수입 내역 <span class="mut" style="font-size:14px">(턴 종료 때 반영)</span></h2>
+   <table><tr><th></th><th>💰 금</th><th>🌾 군량</th></tr>
+   <tr><td>영토 ${E.n}곳 생산</td><td>+${r(E.gp)} <span class="mut">(상업·민심)</span></td><td>+${r(E.fp)} <span class="mut">(농업 × ${sname(month)})</span></td></tr>
+   <tr><td>교역 협정</td><td>+${r(E.gt)}</td><td>-</td></tr>
+   <tr><td>군단 ${fmt(E.ta)}명</td><td rowspan="2">-${r(E.pay)} <span class="mut">(녹봉: 병력 100명당 0.8)</span></td><td>-${r(E.fa)} <span class="mut">(100명당 1.5)</span></td></tr>
+   <tr><td>수비병 ${fmt(E.tg)} + 근위대 ${fmt(E.gd)}</td><td>-${r(E.fgar)} <span class="mut">(200명당 1)</span></td></tr>
+   <tr><th>이번 턴 합계</th><th style="color:${E.g>=0?'#9be37b':'#ff7a7a'}">${sg(E.g)}</th><th style="color:${E.fd>=0?'#9be37b':'#ff7a7a'}">${sg(E.fd)}</th></tr>
+   <tr><td class="mut">다음 달(${sname(nm)}) 예상</td><td class="mut">${sg(E2.g)}</td><td class="mut">${sg(E2.fd)}</td></tr></table>
+   <p class="mut" style="font-size:13px">🌾 계절에 따라 수확이 달라요: 봄·여름 ×1, <b>9·10월 가을 추수 ×1.7</b>, <b>12~2월 겨울 ×0.4</b>. 군단은 수비병보다 군량을 3배 먹어요. 군량이 부족하면 쓰지 않는 군단을 해산해 수비병으로 돌리거나, 농업 개발·태수·군량 구입을 활용하세요.</p>
+   <div class="btns"><button onclick="closeModal()">닫기</button></div>`);
+}
 function upkeep(){
   const sm=seasonFood(month);
   if(month===9)log(`🌾 <b>가을 추수</b> — 군량 수확이 크게 늘었다.`);
   if(month===12)log(`❄️ <b>겨울</b>이 왔다. 보급이 끊긴 군단은 혹독한 추위에 시달린다.`);
   for(const f of facs){if(!f.alive)continue;
-    const own=ownProvs(f.id);let g=0,fd=0;
-    for(const p of own){g+=p.comm*(0.6+p.order/250)*1.3;fd+=p.agri*sm}
-    if(facHasTrait(f.id,'명재상'))g*=1.2;
-    if(!f.isPlayer){g*=DF().inc;fd*=DF().inc}
-    for(const o of facs)if(o.alive&&o.id!==f.id&&dip(f.id,o.id).trade)g+=25+ownProvs(o.id).length*3;
-    const arms=armies.filter(a=>a.fac===f.id);let ta=0,tg=0;arms.forEach(a=>ta+=sum(a.t));own.forEach(p=>tg+=sum(p.gar));tg+=f.guard||0;
-    g-=(ta+tg)/100*0.8;fd-=ta/100*1.5+tg/200;
+    const own=ownProvs(f.id),E=econ(f,month),arms=armies.filter(a=>a.fac===f.id);const g=E.g,fd=E.fd;
     f.gold=Math.round(f.gold+g);f.food=Math.round(f.food+fd);
     if(f.food<0){f.food=0;for(const a of arms){a.mor=clamp(a.mor-12,0,100);applyLoss(a.t,sum(a.t)*.06)}for(const p of own)p.order=clamp(p.order-5,0,100);if(f.isPlayer)log('⚠️ <b>군량이 바닥났다!</b> 병사들이 굶주리고 탈영한다.')}
     if(f.gold<0){f.gold=0;for(const x of gens)if(x.fac===f.id)x.loy=clamp(x.loy-3,0,100);if(f.isPlayer)log('⚠️ <b>국고가 비었다!</b> 녹봉이 밀려 장수들의 충성이 떨어진다.')}
@@ -1267,9 +1285,10 @@ function releaseGen(g){g.captor=null;if(g.fac>=0&&facs[g.fac].alive)g.status='ac
 function renderAll(){renderTop();renderMap();renderPanel();renderLog()}
 function renderTop(){
   const f=facs[ME];
-  document.getElementById('cDate').textContent=`천하력 ${year}년 ${month}월 · ${season(month)} · 난이도 ${DF().n}`;
+  document.getElementById('cDate').textContent=`${year}년 ${month}월·${season(month)}·${DF().n}`;
   document.getElementById('cGold').textContent=f.gold;
   document.getElementById('cFood').textContent=f.food;
+  {const E=econ(f,month),fm=(el,v)=>{el.textContent=(v>=0?'+':'')+Math.round(v);el.style.color=v>=0?'#9be37b':'#ff7a7a'};fm(document.getElementById('cGoldD'),E.g);fm(document.getElementById('cFoodD'),E.fd)}
   document.getElementById('cTroops').textContent=fmt(facTroops(ME));
   document.getElementById('cProv').textContent=`${ownProvs(ME).length}/${provs.length}`;
   const tb=document.getElementById('terrbar');
